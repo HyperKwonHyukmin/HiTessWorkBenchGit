@@ -88,6 +88,29 @@ def test_hoist_figure_labels_stay_inside_image(data):
     assert a[:, :2].min() == 255 and a[:, -2:].min() == 255
 
 
+def test_stress_norm_spreads_colors_to_max_and_caps_at_allowable():
+    """응력 그림 색 범위 — 초과가 없으면 0~최대 응력(색 차이가 보이게), 있으면 0~허용응력."""
+    from app.services.unit_lifting_report.figures import stress_norm
+    assert stress_norm([10.0, 145.8, None], 220.0).vmax == pytest.approx(145.8)
+    assert stress_norm([10.0, 300.0], 220.0).vmax == pytest.approx(220.0)
+    assert stress_norm([], 220.0).vmax == pytest.approx(220.0)
+
+
+def test_cog_and_max_displacement_are_2d_markers_on_top(data):
+    """COG·최대 변위 절점은 솔리드가 아니라 2D 마커(맨 위) — 부재에 가려 안 보이던 문제(2026-11-26)."""
+    points, labels = figures3d._cog_parts(data)
+    assert [s["marker"] for _p, s in points] == ["o", "D"]
+    assert labels and labels[0][1] == "COG"
+
+
+def test_model_boxes_keep_labels_off_members(data):
+    """라벨 자리 고르기 — 부재 점유 상자와 겹치지 않는 자리를 먼저 고른다."""
+    occ = []
+    model = np.array([[0.0, 0.0, 100.0, 100.0]])
+    x, y = S3._place_clear(occ, model, 50.0, 50.0, 40.0, 20.0, 1000.0, 800.0)
+    assert not S3._hits(model, (x, y, x + 40.0, y + 20.0))
+
+
 def test_tube_section_uses_diameter_and_round_profile():
     """TUBE·ROD 의 DIM1 은 반지름이다 — 지름(2·DIM1)으로, 원형으로 세워야 배관이 배관으로 보인다."""
     class S:

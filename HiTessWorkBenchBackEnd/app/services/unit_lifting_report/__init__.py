@@ -41,7 +41,7 @@ def generate_unit_lifting_report(
 
     i = data.identity
     name = (f"{_safe(i.hull_no)}-{_safe(i.unit_no)}_{_safe(i.lifting_method)}_{_safe(i.title_prefix)}"
-            f"_권상_구조_검토_보고서_{now:%Y%m%d}{revision_suffix(opts.revision)}.xlsx")
+            f"_Lifting_Structural_Review_Report_{now:%Y%m%d}{revision_suffix(opts.revision)}.xlsx")
     summary = {
         "totalMassTon": data.model.total_mass_ton,
         "yieldStrengthMPa": data.results.yield_mpa,
@@ -58,4 +58,9 @@ def generate_unit_lifting_report(
 
 
 def _safe(v) -> str:
-    return re.sub(r'[<>:"/\\|?*\s]+', "_", str(v or "unknown")).strip("_.") or "unknown"
+    """파일명 조각 — 영문, 숫자, '-', '.' 만 남긴다.
+
+    2026-11-26 사용자 지적: 저장 창에서 한글 파일명이 'ê¶_ì__' 처럼 깨진 사례가 있었다(재현 못 함 —
+    Electron 26 blob 다운로드와 저장 창 기본 이름은 시험에서 정상). 어느 경로로 저장해도 깨질 글자가
+    없도록 파일명에는 한글을 쓰지 않는다(보고서 안의 제목과 표는 그대로 한글)."""
+    return re.sub(r"[^0-9A-Za-z.\-]+", "_", str(v or "unknown")).strip("_.") or "unknown"

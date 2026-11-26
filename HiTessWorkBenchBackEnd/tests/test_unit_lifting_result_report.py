@@ -25,14 +25,15 @@ def built():
 
 def test_file_name_follows_company_convention(built):
     name, _wb, _w, _s = built
-    assert name.startswith("3496-35210_Hydro_Crane_Module_Unit_권상_구조_해석_보고서_")
+    assert name.startswith("3496-35210_Hydro_Crane_Unit_Lifting_Structural_Analysis_Report_")
+    assert name.isascii()                                   # 한글 파일명은 저장 창에서 깨진 사례가 있어 쓰지 않는다
     assert name.endswith(".xlsx")
 
 
 def test_header_and_summary_cells(built):
     _n, wb, _w, _s = built
     ws = wb["Report"]
-    assert ws["O3"].value == "Module Unit 권상 구조 해석 보고서"
+    assert ws["O3"].value == "Unit 권상 구조 해석 보고서"
     assert ws["O4"].value == "HULL NO. 3496"
     assert ws["Y4"].value == "UNIT NO. 35210"
     assert ws["AI4"].value == "Hydro Crane"

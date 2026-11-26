@@ -9,6 +9,7 @@ import {
 import { API_BASE_URL } from '../../config';
 import { openPastStructuralResult } from '../../utils/pastStructuralResult';
 import { downloadBlob, filenameFromDisposition } from '../../utils/fileHelper';
+import { pickIdSource } from '../../utils/unitLiftingReport';
 import { useToast } from '../../contexts/ToastContext';
 import UnitLiftingReportDialog from './UnitLiftingReportDialog';
 
@@ -94,7 +95,7 @@ export default function ResultArtifactsCard({ parentAnalysisId, onDownloaded }) 
       const pdf = format === 'pdf';
       const name = filenameFromDisposition(
         res.headers['content-disposition'],
-        `Unit_권상_구조_검토_보고서.${pdf ? 'pdf' : 'xlsx'}`,
+        `Unit_Lifting_Report.${pdf ? 'pdf' : 'xlsx'}`,
       );
       downloadBlob(res.data, name, pdf
         ? 'application/pdf'
@@ -276,7 +277,7 @@ export default function ResultArtifactsCard({ parentAnalysisId, onDownloaded }) 
         busy={reportBusy}
         onClose={() => setReportKind(null)}
         onSubmit={handleReport}
-        sourceFileName={byKind.editedBdf?.fileName || byKind.liftingBdf?.fileName || byKind.sourceBdf?.fileName || ''}
+        sourceFileName={pickIdSource(byKind.sourceBdf?.fileName, byKind.editedBdf?.fileName, byKind.liftingBdf?.fileName)}
       />
     </div>
   );

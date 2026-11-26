@@ -32,14 +32,31 @@ def test_identity_from_filename_and_mode(data):
     assert data.identity.wire_length_m == 8
 
 
+@pytest.mark.parametrize("name, ids", [
+    ("3496-35210-A508372_20260108_edit.bdf", ("3496", "35210")),
+    ("3615-324L0-1_Ceiling_Crane_Module_Unit.bdf", ("3615", "324L0-1")),   # 영문 섞인 유닛 (2026-11-26)
+    (r"C:\\a\\3615_324L0_edit.json", ("3615", "324L0")),
+    ("3496_35210_x.json", ("3496", "35210")),
+    ("12345-35210.bdf", (None, None)),                                      # 5자리 호선은 대상 아님
+    ("Module_Unit_Hydro.bdf", (None, None)),
+    ("3496-ABCD.bdf", (None, None)),                                        # 유닛에 숫자가 없으면 아님
+])
+def test_parse_ids_rules(name, ids):
+    from app.services.unit_lifting_report.collector import _parse_ids
+    assert _parse_ids(name) == ids
+
+
 def test_title_prefix_follows_project_kind():
     """표지·파일명 제목은 부모 프로젝트(projectKind)를 따른다."""
     base = _result_info()
-    assert collect(base, ReportOptions()).identity.title_prefix == "Module Unit"
+    assert collect(base, ReportOptions()).identity.title_prefix == "Unit"
     sp = {**base, "projectKind": "SidePassage"}
     assert collect(sp, ReportOptions()).identity.title_prefix == "Side Passage"
     gmu = {**base, "projectKind": "GroupModuleUnit"}
-    assert collect(gmu, ReportOptions()).identity.title_prefix == "Module Unit"
+    assert collect(gmu, ReportOptions()).identity.title_prefix == "Unit"
+    # Module Unit 과 Group Unit 을 가르지 않고 'Unit' 하나로 쓴다(2026-11-26 사용자 지시).
+    group = {**base, "analysisType": "group"}
+    assert collect(group, ReportOptions()).identity.title_prefix == "Unit"
 
 
 def test_title_prefix_falls_back_to_result_folder_name():

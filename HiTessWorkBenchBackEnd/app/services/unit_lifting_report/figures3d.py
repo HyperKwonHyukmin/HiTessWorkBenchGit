@@ -4,7 +4,7 @@
 
   modelTop / modelHome  권상 배치 — 체결 위치(●) + 와이어 + 훅(○) + COG + 라벨 (+ 평면도엔 지지 다각형)
   displacement          변형 형상(자동 배율) + 변위 컬러바 + 최대 변위 위치
-  stress                부재 응력 활용도 + 컬러바 + 지배 부재 라벨
+  stress                부재 응력(MPa) + 컬러바(허용응력 기준선) + 지배 부재 라벨
   supportTop / supportHome  가서포트 강조(있을 때만)
 
 2D 도면(`figures.py`)과 같은 문법(제목·범례·리더선 라벨·그룹색)을 써서 두 보고서가 한 세트로 읽힌다.
@@ -17,7 +17,7 @@ from matplotlib import cm, colors as mcolors
 from matplotlib.lines import Line2D
 
 from .collector import ReportData
-from .figures import EXCEEDED, NO_RESULT, RAMP, STRUCTURE, group_color, _convex_hull
+from .figures import EXCEEDED, NO_RESULT, STRESS_CMAP, STRUCTURE, group_color, _convex_hull, stress_norm
 from . import solid3d as S3
 
 SUPPORT_RGB = mcolors.to_rgb("#E07A16")
@@ -180,7 +180,7 @@ def _legend_groups(data: ReportData, rig: _Rig, *, cog: bool = True, structure: 
         handles.append(Line2D([], [], color=S3.TEXT_MUTED, lw=0, marker="o", ms=6, mfc="white", mew=1.4,
                               mec=S3.TEXT_MUTED, label="훅 정점"))
     if cog and _cog(data):
-        handles.append(Line2D([], [], color=S3.COG_COLOR, lw=0, marker="D", ms=6, label="COG"))
+        handles.append(Line2D([], [], color=S3.COG_COLOR, lw=0, marker="D", ms=6, mec="white", mew=1.0, label="COG"))
     if hull:
         handles.append(Line2D([], [], color=HULL_COLOR, lw=1, ls="--", label="지지 다각형"))
     if structure:
@@ -188,12 +188,19 @@ def _legend_groups(data: ReportData, rig: _Rig, *, cog: bool = True, structure: 
     return handles
 
 
-def _cog_parts(data: ReportData, size: float, nid: int):
+# COG 는 솔리드가 아니라 2D 마커로 맨 위에 찍는다. 솔리드 다이아는 모델 한가운데에 있어 부재에 가려
+# 거의 안 보였다(사용자 지적 2026-11-26 '보고서에서 COG 가 잘 안 보임').
+COG_MARK = dict(marker="D", ms=9.5, mfc=S3.COG_COLOR, mec="white", mew=1.6)
+COG_RING = dict(marker="o", ms=17, mfc="none", mec=S3.COG_COLOR, mew=1.3)
+MAX_POINT_MARK = dict(marker="D", ms=8.5, mfc=MAX_MARK, mec="white", mew=1.5)
+
+
+def _cog_parts(data: ReportData):
+    """(2D 마커 목록, 라벨 목록). COG 가 없으면 둘 다 빈 목록."""
     cog = _cog(data)
     if not cog:
-        return [], {}, nid, []
-    mesh = S3.diamond_mesh([cog], size * 1.5, start_id=nid)
-    return [mesh], {nid: mcolors.to_rgb(S3.COG_COLOR)}, nid - 1, [(cog, "COG", S3.COG_COLOR)]
+        return [], []
+    return [(cog, COG_RING), (cog, COG_MARK)], [(cog, "COG", S3.COG_COLOR)]
 
 
 # ── 권상 배치 ─────────────────────────────────────────────────────────────────
@@ -212,9 +219,7 @@ def render_hoist_model(data: ReportData, view: str) -> bytes:
     rig_parts, per, nid = rig.meshes(size, wire_radius=size * WIRE_RADIUS_RATIO, solid_markers=False)
     per.update(pipes)
     parts += rig_parts
-    cog_parts, cog_per, nid, labels = _cog_parts(data, size, nid)
-    parts += cog_parts
-    per.update(cog_per)
+    cog_points, labels = _cog_parts(data)
 
     for gid, lug_id, lug, _apex, _ang in rig.wires:
         labels.append((lug, f"G{gid}·N{lug_id}", group_color(gid)))
@@ -240,7 +245,7 @@ def render_hoist_model(data: ReportData, view: str) -> bytes:
     if st.min_sling_angle_deg is not None:
         sub += f" · 최소 슬링각 {st.min_sling_angle_deg:.1f}°"
     return S3.render(mesh, colors, view, title=f"권상 배치 — {VIEW_NAMES.get(view, view)}", subtitle=sub,
-                     labels=labels, overlays=overlays, points2d=rig.points2d(),
+                     labels=labels, overlays=overlays, points2d=rig.points2d() + cog_points,
                      legend=_legend_groups(data, rig, hull=bool(hull_ok)) + _pipe_handle(pipes),
                      extra_points=list(rig.apexes.values()), width_in=SLOT_W_IN, height_in=SLOT_H_IN)
 
@@ -282,11 +287,13 @@ def render_displacement(data: ReportData, view: str = "home") -> bytes:
     parts += rig_parts
     per.update(rig_per)
 
-    labels = []
+    # 최대 변위 절점은 2D 마커로 맨 위에 — 솔리드 다이아는 부재 뒤에 숨어 잘 안 보였다(사용자 지적 2026-11-26).
+    # 위치는 뷰 범위 계산(extra_points)에도 넣어 화면 밖으로 잘리지 않게 한다.
+    labels, points, must_see = [], [], []
     if r.max_displacement_node_id in pos:
         p = pos[r.max_displacement_node_id]
-        parts.append(S3.diamond_mesh([p], size * 1.6, start_id=nid))
-        per[nid] = mcolors.to_rgb(MAX_MARK)
+        points.append((p, MAX_POINT_MARK))
+        must_see.append(p)
         labels.append((p, f"최대 {vmax:.1f} mm · N{r.max_displacement_node_id}", MAX_MARK))
 
     mesh = S3.concat(*parts)
@@ -298,16 +305,20 @@ def render_displacement(data: ReportData, view: str = "home") -> bytes:
     return S3.render(mesh, colors, view, title=f"변형 형상 — {VIEW_NAMES.get(view, view)} (변형 배율 ×{scale:.0f})",
                      subtitle=f"최대 변위 {vmax:.2f} mm @N{r.max_displacement_node_id} · 참고치(판정 없음)",
                      labels=labels, legend=handles, colorbar=(cm.viridis, norm, "변위 [mm]"),
-                     width_in=SLOT_W_IN, height_in=SLOT_H_IN)
+                     points2d=points, extra_points=must_see, width_in=SLOT_W_IN, height_in=SLOT_H_IN)
 
 
 def render_stress(data: ReportData, view: str = "home") -> bytes:
-    """부재 응력 활용도 — Studio stressColorRamp 와 같은 색 구간. 지배 부재·초과 부재에 라벨."""
+    """부재 응력(MPa) — 색 범위를 실제 최대 응력에 맞춰 차이가 보이게 한다. 지배 부재·초과 부재에 라벨.
+
+    2026-11-26 사용자 지적: '부재 응력 활용도'(σ/σ허용 0~1 고정)는 응력이 낮으면 전부 파랑 한 색이라
+    차이가 안 보였다. 이제 0 ~ 최대 응력(초과가 있으면 0 ~ 허용응력, 넘는 부재는 빨강)으로 칠하고
+    허용응력은 컬러바에 기준선으로 표시한다."""
     g, r = data.geometry, data.results
     parts = [S3.build_mesh(g, data.model.sections)]
-    values = {m.element_id: m.utilization for m in r.all_members if m.utilization is not None}
-    norm = mcolors.Normalize(0.0, 1.0)
-    per = S3.value_colors(values, RAMP, norm, over_rgb=mcolors.to_rgb(EXCEEDED))
+    values = {m.element_id: m.stress_mpa for m in r.all_members if m.stress_mpa is not None}
+    norm = stress_norm(values.values(), r.allowable_mpa)
+    per = S3.value_colors(values, STRESS_CMAP, norm, over_rgb=mcolors.to_rgb(EXCEEDED))
 
     size = _span(data) * 0.014
     rig = _Rig(data)
@@ -331,9 +342,10 @@ def render_stress(data: ReportData, view: str = "home") -> bytes:
     if len(values) < len(g.elements):
         handles.append(Line2D([], [], color=NO_RESULT, lw=3, label="결과 없음"))
     sub = f"최대 {r.max_stress_mpa:.1f} MPa @E{r.max_stress_element_id} · σ허용 {r.allowable_mpa:.0f} MPa · 초과 {r.exceed_count}개"
-    return S3.render(mesh, colors, view, title=f"부재 응력 활용도 — {VIEW_NAMES.get(view, view)}", subtitle=sub,
+    ref = [(r.allowable_mpa, EXCEEDED, "σ허용")] if r.allowable_mpa else []
+    return S3.render(mesh, colors, view, title=f"부재 응력 — {VIEW_NAMES.get(view, view)}", subtitle=sub,
                      labels=labels, legend=handles,
-                     colorbar=(RAMP, norm, f"활용도 σ/σ허용 (σ허용 = {r.allowable_mpa:.0f} MPa)", [0, 0.4, 0.7, 0.85, 1.0]),
+                     colorbar=(STRESS_CMAP, norm, "응력 σ [MPa]", None, ref),
                      width_in=SLOT_W_IN, height_in=SLOT_H_IN)
 
 

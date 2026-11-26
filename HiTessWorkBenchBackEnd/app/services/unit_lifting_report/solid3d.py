@@ -50,7 +50,10 @@ VIEWS = {"top": (89.9, -90.0), "home": (24.0, -55.0), "iso": (24.0, -55.0), "sid
 # 사내 서식의 캡처 자리는 1243×719px (비율 1.73). 같은 비율로 만들어야 자리를 꽉 채운다.
 SLOT_W_IN, SLOT_H_IN = 7.2, 4.16
 DPI = 200
-PANEL_FRAC = 0.165                   # 우측 정보 띠(범례·컬러바·좌표축) 폭 비율
+PANEL_FRAC = 0.165                   # 우측 정보 띠(범례·컬러바·좌표축) 최소 폭 비율
+PANEL_FRAC_MAX = 0.30                # 범례 글자가 길면 띠를 이만큼까지 넓힌다(넘으면 글자를 줄인다)
+EDGE_PX = 12.0                       # 라벨·범례가 그림 가장자리에서 띄울 최소 간격(px) — 잘림 방지
+MODEL_AVOID_STEP = 12.0              # 라벨이 부재를 덮지 않게 투영 부재를 따라 까는 점유 상자 간격(px)
 TITLE_FRAC = 0.10                    # 상단 제목 띠 높이 비율
 
 
@@ -297,7 +300,8 @@ def render(mesh: SolidMesh, colors: np.ndarray, view: str = "home", *,
            title: str = "", subtitle: str = "", labels: Iterable = (), overlays: Iterable = (),
            legend: Sequence = (), colorbar=None, extra_points: Iterable = (), triad: bool = True,
            width_in: float = SLOT_W_IN, height_in: float = SLOT_H_IN, dpi: int = DPI,
-           fill: float = 0.90, markers: Iterable = (), points2d: Iterable = ()) -> bytes:
+           fill: float = 0.90, markers: Iterable = (), points2d: Iterable = (),
+           avoid_model: bool = True) -> bytes:
     """솔리드 메시를 지정 시점에서 렌더해 PNG 바이트로 돌려준다.
 
     labels:   (xyz, text, color) — 겹침을 피해 배치한 리더선 라벨(항상 맨 위).
@@ -307,10 +311,11 @@ def render(mesh: SolidMesh, colors: np.ndarray, view: str = "home", *,
     colorbar: (cmap, norm, label[, ticks]) → 우측 띠 컬러바.
     extra_points: 화면에 반드시 들어와야 하는 점(훅 정점 등) — 뷰 범위 계산에 포함.
     markers:  구버전 호환 — (xyz, color, text) 형식을 labels 로 바꿔 받는다.
+    avoid_model: True 면 라벨을 투영된 부재 위가 아닌 빈 곳에 놓는다(리더선으로 잇는다). 빈 곳이
+              없으면 부재 위라도 다른 라벨과 겹치지 않는 자리에 놓는다(사용자 지적 2026-11-26 —
+              응력 라벨이 결과 색을 가렸다).
     결과 PNG 는 흰 여백을 잘라낸 뒤 width_in:height_in 비율로 다시 맞춘다(서식 자리 왜곡 방지).
     """
-    from .figures import place_label       # 지연 import — figures 가 figures3d 를 지연 참조한다
-
     labels = list(labels) + [(m[0], m[2], m[1]) for m in markers]
     fig = plt.figure(figsize=(width_in, height_in), dpi=dpi)
     fig.patch.set_facecolor("white")
@@ -343,12 +348,27 @@ def render(mesh: SolidMesh, colors: np.ndarray, view: str = "home", *,
     ax.view_init(elev=elev, azim=azim)
     ax.set_axis_off()
     has_panel = bool(legend) or colorbar is not None or triad
-    panel_x = 1.0 - PANEL_FRAC if has_panel else 1.0
+    W, H = fig.get_size_inches() * fig.dpi
+    # 범례 폭을 먼저 재서 정보 띠 폭을 정한다 — 고정 폭이면 '배관 (PID ≥ 101)' 같은 긴 줄이
+    # 그림 오른쪽 끝에서 잘렸다(사용자 지적 2026-11-26, 결과 레포트 캡처의 텍스트 잘림).
+    leg_fs = 7.0
+    panel_frac = PANEL_FRAC
+    if legend:
+        for fs in (7.0, 6.5, 6.0):
+            probe = fig.legend(handles=list(legend), loc="upper left", fontsize=fs, handlelength=1.6,
+                               borderaxespad=0.0)
+            fig.canvas.draw()
+            need = (probe.get_window_extent().width + 2 * EDGE_PX) / W + 0.008
+            probe.remove()
+            leg_fs = fs
+            if need <= PANEL_FRAC_MAX:
+                break
+        panel_frac = min(PANEL_FRAC_MAX, max(PANEL_FRAC, need))
+    panel_x = 1.0 - panel_frac if has_panel else 1.0
     top_y = 1.0 - TITLE_FRAC if (title or subtitle) else 1.0
     # Axes3D 는 주어진 영역 안에서 항상 '정사각형' 으로 줄어든다(apply_aspect). 가로로 넓은 자리를
     # 다 쓰려면 축 자체를 가시 영역(panel_x × top_y)보다 큰 정사각형으로 놓고, 그 중심을 가시 영역
     # 중심에 맞춘 뒤 가시 영역 기준으로 확대율을 정해야 한다(축 밖은 그냥 잘린다).
-    W, H = fig.get_size_inches() * fig.dpi
     sq_w = panel_x
     sq_h = sq_w * W / H
     ax.set_position([0.0, (top_y - sq_h) / 2.0, sq_w, sq_h])
@@ -380,13 +400,18 @@ def render(mesh: SolidMesh, colors: np.ndarray, view: str = "home", *,
     leg = None
     if legend:
         leg = fig.legend(handles=list(legend), loc="upper left", bbox_to_anchor=(panel_x + 0.008, top_y - 0.005),
-                         fontsize=7, framealpha=0.95, edgecolor="#AEB8C2", borderaxespad=0.0, handlelength=1.6)
+                         fontsize=leg_fs, framealpha=0.95, edgecolor="#AEB8C2", borderaxespad=0.0, handlelength=1.6)
     cax = None
     if colorbar is not None:
         cmap, norm, clabel = colorbar[:3]
         ticks = colorbar[3] if len(colorbar) > 3 else None
-        cb_top = (top_y - 0.05) - (0.055 * (len(legend) + 1) if legend else 0.0)
-        cb_h = max(0.30, cb_top - 0.22)
+        # 컬러바는 범례 바로 아래에서 시작한다(범례 실제 높이를 재서 — 줄 수로 어림하면 겹치거나 비었다)
+        if leg is not None:
+            fig.canvas.draw()
+            cb_top = leg.get_window_extent().y0 / H - 0.06
+        else:
+            cb_top = top_y - 0.05
+        cb_h = max(0.26, cb_top - 0.22)
         cax = fig.add_axes([panel_x + 0.035, cb_top - cb_h, 0.022, cb_h])
         sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
         sm.set_array([])
@@ -394,6 +419,12 @@ def render(mesh: SolidMesh, colors: np.ndarray, view: str = "home", *,
         cb.set_label(clabel, fontsize=7.5, color=TEXT_DARK)
         cb.ax.tick_params(labelsize=6.5, colors=TEXT_MUTED)
         cb.outline.set_edgecolor("#AEB8C2")
+        for v, color, text in (colorbar[4] if len(colorbar) > 4 else ()):
+            # 기준선(예: 허용응력) — 막대 위에 가로줄과 짧은 글자
+            if norm.vmin <= v <= norm.vmax:
+                cax.axhline(v, color=color, lw=1.6)
+                cax.text(-0.6, v, text, transform=cax.get_yaxis_transform(), fontsize=6.2, color=color,
+                         ha="right", va="center", fontweight="bold")
 
     fig.canvas.draw()
     # 그림 밖은 전부 '점유' 로 두어 라벨 후보가 화면 밖으로 나가지 않게 한다
@@ -434,19 +465,25 @@ def render(mesh: SolidMesh, colors: np.ndarray, view: str = "home", *,
 
     # 리더선 라벨 — 3D 좌표를 화면 픽셀로 투영해 겹침을 피해 놓는다
     px_per_pt = dpi / 72.0
+    model_boxes = _model_boxes(ax, mesh) if (avoid_model and labels) else None
+    anns = []
     for pos, text, color in labels:
         if not text:
             continue
         sx, sy = _to_pixels(ax, np.asarray(pos, dtype=float)[None, :])[0]
         fs = 7.5
-        w = sum((1.0 if ord(ch) > 0x2E7F else 0.58) for ch in text) * fs * px_per_pt + 14
+        # 굵은 글꼴 기준으로 넉넉히 잡는다 — 작게 잡으면 상자가 겹치거나 그림 끝에서 잘린다
+        w = sum((1.0 if ord(ch) > 0x2E7F else 0.64) for ch in text) * fs * px_per_pt + 16
         h = fs * px_per_pt * 1.9
-        bx, by = place_label(occupied, sx, sy, w, h, gap=8.0)
-        ax.annotate(text, (sx, sy), (bx + w / 2, by + h / 2), xycoords="figure pixels", textcoords="figure pixels",
-                    fontsize=fs, color=TEXT_DARK, fontweight="bold", ha="center", va="center",
-                    bbox=dict(boxstyle="round,pad=0.25", fc="white", ec=color, lw=0.9, alpha=0.96),
-                    arrowprops=dict(arrowstyle="-", color=color, lw=0.9, shrinkA=0, shrinkB=1),
-                    annotation_clip=False, zorder=10)
+        bx, by = _place_clear(occupied, model_boxes, sx, sy, w, h, W, H)
+        anns.append(ax.annotate(
+            text, (sx, sy), (bx + w / 2, by + h / 2), xycoords="figure pixels", textcoords="figure pixels",
+            fontsize=fs, color=TEXT_DARK, fontweight="bold", ha="center", va="center",
+            bbox=dict(boxstyle="round,pad=0.25", fc="white", ec=color, lw=0.9, alpha=0.96),
+            arrowprops=dict(arrowstyle="-", color=color, lw=0.9, shrinkA=0, shrinkB=1),
+            annotation_clip=False, zorder=10))
+    if anns:
+        _keep_inside(fig, anns, W, H)
 
     if coll is not None:
         coll.set_visible(True)                  # 실제로 부재를 그리는 것은 이 한 번뿐이다
@@ -454,6 +491,67 @@ def render(mesh: SolidMesh, colors: np.ndarray, view: str = "home", *,
     fig.savefig(buf, format="png", dpi=dpi, facecolor="white")
     plt.close(fig)
     return fit_aspect(_trim_white(buf.getvalue(), margin=int(10 * dpi / 200)), width_in / height_in)
+
+
+def _model_boxes(ax, mesh, step: float = MODEL_AVOID_STEP, half: float = 5.0):
+    """투영된 부재(면 중심)를 덮는 작은 점유 상자 (N,4) 배열. 라벨을 부재 위에 놓지 않으려고 쓴다.
+
+    면 중심만 투영해 격자(step px)로 솎는다. 3만 면이어도 벡터 투영 한 번과 격자 중복 제거라 수십 ms 다."""
+    if mesh is None or not len(mesh.quads):
+        return None
+    centers = np.asarray(mesh.quads, dtype=float).mean(axis=1)
+    M = ax.get_proj()
+    xs, ys, _ = proj3d.proj_transform(centers[:, 0], centers[:, 1], centers[:, 2], M)
+    px = ax.transData.transform(np.column_stack([xs, ys]))
+    cells = np.unique(np.floor(px / step).astype(np.int64), axis=0)
+    c = (cells + 0.5) * step
+    pad = step / 2.0 + half
+    return np.column_stack([c[:, 0] - pad, c[:, 1] - pad, c[:, 0] + pad, c[:, 1] + pad])
+
+
+def _hits(boxes, box, pad: float = 2.0) -> bool:
+    if boxes is None or not len(boxes):
+        return False
+    x0, y0, x1, y1 = box
+    return bool(np.any(~((x1 + pad < boxes[:, 0]) | (boxes[:, 2] + pad < x0)
+                        | (y1 + pad < boxes[:, 1]) | (boxes[:, 3] + pad < y0))))
+
+
+def _place_clear(occupied: list, model_boxes, px: float, py: float, w: float, h: float,
+                 W: float, H: float, gap: float = 8.0):
+    """라벨 상자 자리(x0, y0). 1순위 = 다른 라벨, 범례와도 부재와도 안 겹치는 가까운 자리.
+    없으면 figures.place_label(부재는 무시하고 라벨끼리만 피함)로 물러선다."""
+    from .figures import place_label, _overlap
+
+    if model_boxes is not None and len(model_boxes):
+        cands = [(px + gap, py + gap), (px + gap, py - h - gap), (px - w - gap, py + gap),
+                 (px - w - gap, py - h - gap)]
+        for ring in range(1, 13):
+            r = (h + gap) * 1.4 * ring
+            for ux, uy in ((1, 0), (0, 1), (-1, 0), (0, -1), (0.7, 0.7), (-0.7, 0.7), (0.7, -0.7), (-0.7, -0.7)):
+                cands.append((px + ux * r - w / 2, py + uy * r - h / 2))
+        for cx, cy in cands:
+            box = (cx, cy, cx + w, cy + h)
+            if box[0] < EDGE_PX or box[1] < EDGE_PX or box[2] > W - EDGE_PX or box[3] > H - EDGE_PX:
+                continue
+            if any(_overlap(box, o) for o in occupied) or _hits(model_boxes, box):
+                continue
+            occupied.append(box)
+            return (cx, cy)
+    return place_label(occupied, px, py, w, h, gap=gap)
+
+
+def _keep_inside(fig, anns, W: float, H: float):
+    """그려 본 라벨 상자가 그림 밖으로 나가면 안쪽으로 밀어 넣는다(글자 폭 어림이 빗나간 경우의 안전망)."""
+    fig.canvas.draw()
+    for ann in anns:
+        patch = ann.get_bbox_patch()
+        bb = (patch or ann).get_window_extent()
+        dx = max(0.0, EDGE_PX - bb.x0) - max(0.0, bb.x1 - (W - EDGE_PX))
+        dy = max(0.0, EDGE_PX - bb.y0) - max(0.0, bb.y1 - (H - EDGE_PX))
+        if dx or dy:
+            x, y = ann.xyann
+            ann.xyann = (x + dx, y + dy)
 
 
 def _line_boxes(px: np.ndarray, half: float, step: float = 14.0) -> list:

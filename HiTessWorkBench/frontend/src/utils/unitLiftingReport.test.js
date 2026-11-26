@@ -12,6 +12,9 @@ test('deriveIds: 파일명의 호선-유닛 패턴을 뽑는다', () => {
 });
 
 test('deriveIds: 패턴이 없거나 자릿수가 다르면 빈 문자열', () => {
+  assert.deepEqual(deriveIds('3615-324L0-1_Ceiling_Crane_Module_Unit.json'), { hullNo: '3615', unitNo: '324L0-1' });
+  assert.deepEqual(deriveIds('C:\\work\\3615_324L0_edit.bdf'), { hullNo: '3615', unitNo: '324L0' });
+  assert.deepEqual(deriveIds('3496-ABCD.bdf'), { hullNo: '', unitNo: '' });
   assert.deepEqual(deriveIds('foo.bdf'), { hullNo: '', unitNo: '' });
   assert.deepEqual(deriveIds('12345-35210.bdf'), { hullNo: '', unitNo: '' });   // 5자리 호선은 대상 아님
   assert.deepEqual(deriveIds(''), { hullNo: '', unitNo: '' });

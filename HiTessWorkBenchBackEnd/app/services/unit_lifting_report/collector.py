@@ -75,7 +75,7 @@ def revision_suffix(revision: str | None) -> str:
     결과·상세 보고서 모두 확장자 바로 앞에 붙인다(사용자 요청 2026-10-13, 예: `..._20261013_rev02.pdf`).
     """
     raw = re.sub(r"^rev\.?\s*", "", str(revision or "").strip(), flags=re.IGNORECASE)
-    raw = re.sub(r'[<>:"/\\|?*\s]+', "", raw)   # 파일명에 못 쓰는 글자 제거
+    raw = re.sub(r"[^0-9A-Za-z.\-]+", "", raw)   # 파일명에는 영문, 숫자, '-', '.' 만(한글 깨짐 방지)
     if not raw:
         return ""
     return f"_rev{int(raw):02d}" if raw.isdigit() else f"_rev{raw}"
@@ -172,6 +172,11 @@ class StabilityInfo:
     def advisory_unmet(self) -> bool:
         """자세안정성 FAIL 인 채 구조 해석까지 진행했다(보고서는 구조 해석 결과로만 만든다 — stability_gate.unmet 과 같은 규칙)."""
         return self.overall_status == "fail"
+
+    def report_status(self, status: str) -> str:
+        """보고서에 적는 판정. Advisory 는 자세안정성 FAIL 이어도 진행하려고 고르는 모드라
+        FAIL 을 WARN 으로 적는다(2026-11-26 사용자 지시). 엔진 판정 값(overall_status, stage_rows)은 바꾸지 않는다."""
+        return "warn" if self.advisory_unmet and status == "fail" else status
 
 
 @dataclass
@@ -333,11 +338,13 @@ def _identity(o: ReportOptions, info, stability, posture, meta, generated_at) ->
 
 
 # result_info["projectKind"] (= 부모 Analysis.program_name) → 보고서 표지·파일명의 제목 머리말.
-# 같은 결과 스키마를 Module Unit 과 Side Passage 가 함께 쓰므로, 어느 쪽 프로젝트인지는
+# 같은 결과 스키마를 Unit 권상과 Side Passage 가 함께 쓰므로, 어느 쪽 프로젝트인지는
 # 결과 JSON 이 아니라 부모 레코드만 안다. 없으면 폴더 이름으로 추정한다(과거 기록 호환).
+# Unit 권상은 Module Unit 일 수도 Group Unit 일 수도 있어 제목은 'Unit' 하나로 쓴다(2026-11-26 사용자 지시).
+UNIT_TITLE_PREFIX = "Unit"
 _TITLE_PREFIX_BY_PROJECT = {
     "sidepassage": "Side Passage",
-    "groupmoduleunit": "Module Unit",
+    "groupmoduleunit": UNIT_TITLE_PREFIX,
 }
 
 
@@ -348,12 +355,20 @@ def _title_prefix(info) -> str:
     folder = re.sub(r"[^a-z]", "", str(info.get("bdf") or "").lower())
     if "sidepassage" in folder:
         return "Side Passage"
-    return "Group Unit" if str(info.get("analysisType") or "").lower().startswith("group") else "Module Unit"
+    return UNIT_TITLE_PREFIX
+
+
+_IDS_RE = re.compile(r"(?<![0-9A-Za-z])(\d{4})[-_]([0-9A-Za-z]{3,})(-\d{1,2})?(?=[-_.\s]|$)")
 
 
 def _parse_ids(path: str):
-    m = re.search(r"(?<!\d)(\d{4})[-_](\d{5})(?!\d)", os.path.basename(path or ""))
-    return (m.group(1), m.group(2)) if m else (None, None)
+    """파일명 → (호선, 유닛). 호선 = 4자리 숫자, 유닛 = 영숫자 3자 이상(숫자 포함) + 선택 '-1' 같은 짧은 번호.
+    '3615-324L0-1_Ceiling…' → ('3615', '324L0-1'). 프론트 deriveIds(WorkBench, Studio)와 같은 규칙."""
+    base = re.split(r"[\\/]", str(path or ""))[-1]
+    for m in _IDS_RE.finditer(base):
+        if re.search(r"\d", m.group(2)):
+            return m.group(1), m.group(2) + (m.group(3) or "")
+    return None, None
 
 
 def _geometry(mj: dict) -> Geometry:
@@ -630,6 +645,11 @@ def _results(result, stability, stab: StabilityInfo, o: ReportOptions, geom: Opt
     )
 
 
+# Advisory 로 자세안정성 미충족인 채 해석했을 때 '먼저 확인할 사항' 맨 앞 줄(보고서에는 FAIL 대신 WARN 으로 적는다).
+ADVISORY_ACTION = ("자세안정성 WARN(Advisory) — 자세안정성 기준을 만족하지 않은 상태로 진행한 해석입니다. "
+                   "실제 권상 전에 권상 자세와 위치를 확인하십시오.")
+
+
 def _verdicts(r: ResultInfo, s: StabilityInfo, o: ReportOptions) -> Verdicts:
     actions: list[str] = []
     if r.member_count == 0:
@@ -647,12 +667,12 @@ def _verdicts(r: ResultInfo, s: StabilityInfo, o: ReportOptions) -> Verdicts:
         actions.append("압축 또는 슬랙 상태의 와이어가 있습니다 — 권상 자세와 와이어 길이를 재검토하십시오.")
     if s.advisory_unmet:
         # 맨 앞에 둔다 — 요약 '먼저 확인할 사항' 은 앞 3줄만 보인다.
-        actions.insert(0, "자세안정성 FAIL 인 채 Advisory 모드로 진행한 해석입니다 — 권상 위치를 바꿔 자세안정성을 만족하기 전에는 권상할 수 없습니다.")
+        actions.insert(0, ADVISORY_ACTION)
     elif s.overall_status == "fail":
         actions.append("자세안정성 FAIL — 권상 위치를 변경하기 전에는 권상할 수 없습니다.")
     for w in s.warnings[:5]:
         actions.append(f"[{w.get('target', '')}] {w.get('headline', '')}")
-    return Verdicts(structure, s.overall_status, jig, actions)
+    return Verdicts(structure, s.report_status(s.overall_status), jig, actions)
 
 
 # ── 유틸 ─────────────────────────────────────────────────────────────────────

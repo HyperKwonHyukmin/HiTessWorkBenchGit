@@ -2075,9 +2075,10 @@ ipcMain.handle("viewer:generateUnitLiftingReport", async (event, payload) => {
 
     const reportBuffer = Buffer.from(await res.arrayBuffer());
     const encodedName = res.headers.get("x-report-filename") || "";
+    // 기본 이름도 영문 — 한글 파일명이 저장 창에서 깨진 사례가 있어 서버 파일명과 같은 규칙(2026-11-26)
     let fileName = payload.kind === "detail"
-      ? `Module_Unit_권상_구조_검토_보고서.${reportFormat}`
-      : `Module_Unit_권상_구조_해석_보고서.${reportFormat}`;
+      ? `Unit_Lifting_Structural_Review_Report.${reportFormat}`
+      : `Unit_Lifting_Structural_Analysis_Report.${reportFormat}`;
     try { if (encodedName) fileName = decodeURIComponent(encodedName); } catch {}
     let warnings = [];
     try {

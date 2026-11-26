@@ -118,14 +118,17 @@ def _write(wb, d: ReportData, figs, errs, logo, entries, pages, total_pages):
     s.kv([("원본 BDF", i.source_bdf or "-"), ("해석 모델(편집본)", i.edited_model or "-"),
           ("결과 생성 시각", i.generated_at), ("비고", i.notes or "-")])
     sec("1.4 소프트웨어")
-    s.kv([("플랫폼", f"Hi-TESS WorkBench / {i.title_prefix} Studio"), ("자세안정성 엔진", i.engine_version or "ModuleAnalysis.Stability"),
+    studio = "Side Passage Studio" if i.title_prefix == "Side Passage" else "Module Unit Studio"
+    s.kv([("플랫폼", f"Hi-TESS WorkBench / {studio}"), ("자세안정성 엔진", i.engine_version or "ModuleAnalysis.Stability"),
           ("BDF 생성·결과 매핑", "NastranBridge (LiftingBdfBuild / LiftingResultMapper)"), ("해석기", L.solver)])
     sec("1.5 판정 기준")
     s.table(["항목", "기준", "비고"],
             [["부재 응력", f"σmax ≤ σ허용 = σy × 0.8 = {r.allowable_mpa:g} MPa", f"σy = {r.yield_mpa:g} MPa"],
              ["와이어 장력", f"장력 > {d.options.jig_limit_ton:g} ton 이면 국부 변형 방지 지그 필요", "장력 = |축력| / 9,800 N/ton"],
              ["와이어 건전성", "압축·슬랙 와이어 없어야 함", "CROD 축력 부호"],
-             ["자세 안정성", "엔진 7단계 종합 판정 (FAIL 이면 권상 불가)", "평가 모드 " + EVAL_MODE_KO.get(st.evaluation_mode, st.evaluation_mode)],
+             ["자세 안정성",
+              "엔진 7단계 종합 판정 (Advisory: WARN 기록)" if st.advisory_unmet else "엔진 7단계 종합 판정 (FAIL 이면 권상 불가)",
+              "평가 모드 " + EVAL_MODE_KO.get(st.evaluation_mode, st.evaluation_mode)],
              ["변위", "참고치 (판정 없음)", "최대 변위 절점·성분 기록"]], widths=[3, 6, 3], title="판정 기준")
 
     # ── 2. 해석 모델 ─────────────────────────────────────────────────────────
@@ -205,10 +208,11 @@ def _write(wb, d: ReportData, figs, errs, logo, entries, pages, total_pages):
     else:
         none_note("권상 위치 최적화(_hoist_optimization.json)")
     sec("3.3 자세 안정성 단계별 판정")
-    s.para(f"종합 판정: {STATUS_KO.get(st.overall_status, st.overall_status)} — {st.primary_message}")
+    overall_shown = st.report_status(st.overall_status)
+    s.para(f"종합 판정: {STATUS_KO.get(overall_shown, overall_shown)}{' (Advisory)' if st.advisory_unmet else ''} — {_stability_message(st)}")
     if st.advisory_unmet:
-        s.note("Advisory 모드: 자세 안정성 종합 판정이 FAIL 이지만 구조 해석을 진행했다. "
-               "아래 구조 해석 결과는 이 권상 자세가 성립한다고 가정한 값이며, 자세 안정성을 만족하기 전에는 권상할 수 없다.")
+        s.note("Advisory 모드: 자세 안정성 기준을 만족하지 않아도 구조 해석을 진행하는 모드라, 엔진의 FAIL 판정을 이 보고서에는 "
+               "WARN 으로 기록했다. 아래 구조 해석 결과는 이 권상 자세가 성립한다고 가정한 값이므로 실제 권상 전에 권상 자세를 확인한다.")
         if st.tipping is not None and not st.tipping.is_stable:
             s.note("6단계 전도 판정이 실패라 해석의 앵커 구속(무게중심 근처 절점 X·Y)이 기울어지려는 힘을 받는다. "
                    "앵커 주변 응력은 실제와 다를 수 있다.")
@@ -216,11 +220,15 @@ def _write(wb, d: ReportData, figs, errs, logo, entries, pages, total_pages):
         s.note("Standard 평가: 1·2단계 형상 판정이 FAIL 대신 WARN 으로 완화되어 평가되었다"
                "(3단계 wire≤0, 6단계 전도는 완화 없음).")
     s.table(["단계", "항목", "판정", "핵심 수치"],
-            [[x.stage, x.label, STATUS_KO.get(x.status, x.status),
+            [[x.stage, x.label, STATUS_KO.get(st.report_status(x.status), x.status),
               x.key_metric + (f"  —  {x.note}" if x.note else "")] for x in st.stage_rows],
             widths=[1, 3, 1, 7], status_col=2, title="자세 안정성 7단계 판정")
+    if st.advisory_unmet:
+        # Advisory 는 FAIL 을 WARN 으로 적으므로, 엔진이 핵심 문제로 꼽은 항목(SWL 초과 등)은 따로 적어 묻히지 않게 한다.
+        for w in st.critical:
+            s.bullet("[엔진 FAIL 항목] " + (_issue_text(w) if isinstance(w, dict) else str(w)))
     for w in st.warnings:
-        s.bullet(f"[{w.get('stage')}단계 · {w.get('target', '')}] {w.get('headline', '')} — {w.get('message', '')}")
+        s.bullet(_issue_text(w))
     sec("3.4 정점 및 와이어 기하")
     s.table(["그룹", "정점 X", "정점 Y", "정점 Z", "연결 러그"],
             [[f"G{a.get('groupId')}", a["pointMm"]["x"], a["pointMm"]["y"], a["pointMm"]["z"],
@@ -296,8 +304,8 @@ def _write(wb, d: ReportData, figs, errs, logo, entries, pages, total_pages):
             [[p.pid, p.section_label, p.count, round(p.max_stress_mpa, 2), round(p.max_utilization, 3), p.governing_element_id]
              for p in r.pid_summary], widths=[1, 5, 1, 2, 2, 1], title="단면(PID)별 요약")
     fig("utilization_hist", "부재 활용도 분포", 640, 285)
-    fig("stress_plan", "부재 응력 활용도 — 평면도")
-    fig("stress_iso", "부재 응력 활용도 — 등각도")
+    fig("stress_plan", "부재 응력 — 평면도")
+    fig("stress_iso", "부재 응력 — 등각도")
     sec("5.3 와이어 장력 및 반력")
     s.table(["그룹", "러그", "축력 [N]", "장력 [ton]", "슬링각 [°]", "수직반력 [ton]", "지그", "상태"],
             [[f"G{w.group_id}", f"N{w.lug_node_id}", round(w.axial_force_n, 1), round(w.tension_ton, 3),
@@ -325,7 +333,7 @@ def _write(wb, d: ReportData, figs, errs, logo, entries, pages, total_pages):
     chap("6", "6. 결론")
     s.para(f"구조 판정: {v.structure} — 최대 응력 {r.max_stress_mpa:.2f} MPa (요소 {r.max_stress_element_id}) / "
            f"허용 {r.allowable_mpa:g} MPa, 초과 부재 {r.exceed_count}개.")
-    s.para(f"자세 안정성: {STATUS_KO.get(v.stability, v.stability)} — {st.primary_message}")
+    s.para(f"자세 안정성: {STATUS_KO.get(v.stability, v.stability)} — {_stability_message(st)}")
     s.para(f"국부 변형 방지 지그: {'필요' if v.jig_required else '불요'} (기준 {d.options.jig_limit_ton:g} ton, "
            f"최대 와이어 장력 {max((w.tension_ton for w in r.wires), default=0):.3f} ton).")
     s.subsection("조치 필요 사항")
@@ -363,6 +371,17 @@ def _write(wb, d: ReportData, figs, errs, logo, entries, pages, total_pages):
         s.toc_fill([(text, pages.get(text, 0), lvl) for text, lvl in entries])
     total = s.finish()
     return sec_pages, total
+
+
+def _stability_message(st) -> str:
+    """종합 판정 옆 문장. Advisory 로 WARN 이라 적을 때 엔진의 FAIL 문장('그대로 진행하기 어렵습니다')을 붙이면 어긋난다."""
+    if st.advisory_unmet:
+        return "자세 안정성 기준을 만족하지 않은 상태로 진행한 해석이다(Advisory). 핵심 문제는 아래 엔진 FAIL 항목을 본다."
+    return st.primary_message
+
+
+def _issue_text(w: dict) -> str:
+    return f"[{w.get('stage')}단계 · {w.get('target', '')}] {w.get('headline', '')} — {w.get('message', '')}"
 
 
 def _data_sheets(wb: Workbook, d: ReportData):

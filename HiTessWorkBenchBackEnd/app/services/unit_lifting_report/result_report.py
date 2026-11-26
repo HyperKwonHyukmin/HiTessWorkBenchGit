@@ -95,7 +95,7 @@ def generate_result_report(result_info: dict[str, Any], options: dict[str, Any] 
 
     i = data.identity
     name = (f"{_safe(i.hull_no)}-{_safe(i.unit_no)}_{_safe(i.lifting_method)}_"
-            f"{_safe(i.title_prefix)}_권상_구조_해석_보고서_{now:%Y%m%d}{revision_suffix(opts.revision)}.xlsx")
+            f"{_safe(i.title_prefix)}_Lifting_Structural_Analysis_Report_{now:%Y%m%d}{revision_suffix(opts.revision)}.xlsx")
     summary = {
         "totalMassTon": data.model.total_mass_ton,
         "yieldStrengthMPa": data.results.yield_mpa,
@@ -450,4 +450,5 @@ def _drop_support_page(ws):
 
 
 def _safe(v) -> str:
-    return re.sub(r'[<>:"/\\|?*\s]+', "_", str(v or "unknown")).strip("_.") or "unknown"
+    """파일명 조각 — 영문, 숫자, '-', '.' 만(한글 파일명이 저장 창에서 깨진 사례, __init__._safe 와 같은 규칙)."""
+    return re.sub(r"[^0-9A-Za-z.\-]+", "_", str(v or "unknown")).strip("_.") or "unknown"

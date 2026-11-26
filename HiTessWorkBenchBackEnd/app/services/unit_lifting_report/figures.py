@@ -27,9 +27,25 @@ DPI = 150
 # Studio stressColorRamp.js RAMP_STOPS 와 동일
 RAMP = mcolors.LinearSegmentedColormap.from_list("util", [
     (0.00, "#1E5AA8"), (0.40, "#2BA6C4"), (0.70, "#37E08A"), (0.85, "#FFC447"), (1.00, "#FF8A3D")])
+# 부재 응력 그림(MPa) 색 — RAMP 와 같은 색을 고르게 펼친다(RAMP 는 활용도 구간 0.4/0.7/0.85 에 맞춘 것).
+STRESS_CMAP = mcolors.LinearSegmentedColormap.from_list("stress", [
+    (0.00, "#1E5AA8"), (0.25, "#2BA6C4"), (0.50, "#37E08A"), (0.75, "#FFC447"), (1.00, "#FF8A3D")])
 EXCEEDED = "#FF5566"
 NO_RESULT = "#90A4B0"
 _ISO_C, _ISO_S = math.cos(math.radians(30)), math.sin(math.radians(30))
+
+
+def stress_norm(values, allowable_mpa: float):
+    """부재 응력 그림의 색 범위. 0 ~ 최대 응력 — 다만 허용응력을 넘는 부재가 있으면 0 ~ 허용응력으로
+    잡아 넘는 부재만 EXCEEDED(빨강)로 칠한다. 결과가 없으면 0 ~ 허용응력(없으면 1)."""
+    vals = [abs(float(v)) for v in values if v is not None and math.isfinite(float(v))]
+    vmax = max(vals) if vals else 0.0
+    allow = float(allowable_mpa or 0.0)
+    if allow > 0 and vmax > allow:
+        top = allow
+    else:
+        top = vmax if vmax > 0 else (allow or 1.0)
+    return mcolors.Normalize(0.0, top)
 
 
 def group_color(gid: int) -> str:
@@ -322,19 +338,26 @@ def _render_deformed(g: Geometry, d: ReportData) -> bytes:
 
 def _render_stress(g: Geometry, d: ReportData, view: str) -> bytes:
     fig, ax = _fig(7.2, 5.0)
-    util = {m.element_id: m.utilization for m in d.results.all_members}
+    # 3D 그림(figures3d.render_stress)과 같은 규칙 — 0 ~ 최대 응력(초과가 있으면 허용응력까지, 넘으면 빨강)
+    stress = {m.element_id: m.stress_mpa for m in d.results.all_members if m.stress_mpa is not None}
+    norm = stress_norm(stress.values(), d.results.allowable_mpa)
     segs, cols = [], []
     for eid, n1, n2, _pid, _r in g.elements:
         segs.append([project(g.nodes[n1], view), project(g.nodes[n2], view)])
-        u = util.get(eid)
-        cols.append(NO_RESULT if u is None else (EXCEEDED if u > 1 else RAMP(min(max(u, 0), 1))))
+        s = stress.get(eid)
+        cols.append(NO_RESULT if s is None else (EXCEEDED if abs(s) > norm.vmax else STRESS_CMAP(norm(abs(s)))))
     ax.add_collection(LineCollection(segs, colors=cols, linewidths=1.0, zorder=3))
     ax.autoscale_view()
-    sm = plt.cm.ScalarMappable(cmap=RAMP, norm=mcolors.Normalize(0, 1))
+    sm = plt.cm.ScalarMappable(cmap=STRESS_CMAP, norm=norm)
     sm.set_array([])
-    cb = fig.colorbar(sm, ax=ax, fraction=0.035, pad=0.02, ticks=[0, 0.4, 0.7, 0.85, 1.0])
-    cb.set_label(f"활용도 σ/σ허용 (σ허용 = {d.results.allowable_mpa:g} MPa)", fontsize=8)
+    cb = fig.colorbar(sm, ax=ax, fraction=0.035, pad=0.02)
+    cb.set_label("응력 σ [MPa]", fontsize=8)
     cb.ax.tick_params(labelsize=7)
+    allow = d.results.allowable_mpa
+    if allow and norm.vmin <= allow <= norm.vmax:
+        cb.ax.axhline(allow, color=EXCEEDED, lw=1.6)
+        cb.ax.text(-0.6, allow, "σ허용", transform=cb.ax.get_yaxis_transform(), fontsize=6.5, color=EXCEEDED,
+                   ha="right", va="center", fontweight="bold")
     fig.canvas.draw()
     occupied: list = []
     elem_by_id = {e[0]: e for e in g.elements}
@@ -345,8 +368,9 @@ def _render_stress(g: Geometry, d: ReportData, view: str) -> bytes:
         a, b = g.nodes[el[1]], g.nodes[el[2]]
         px, py = project(tuple((a[i] + b[i]) / 2 for i in range(3)), view)
         _label(ax, occupied, px, py, f"E{m.element_id} {m.stress_mpa:.1f} MPa", EXCEEDED if m.exceeds else "#34424E")
-    _title(ax, f"부재 응력 활용도 — {'평면도' if view == 'plan' else '등각도'}",
-           f"최대 {d.results.max_stress_mpa:.1f} MPa @E{d.results.max_stress_element_id} · 초과 {d.results.exceed_count}개 · 회색 = 결과 없음")
+    _title(ax, f"부재 응력 — {'평면도' if view == 'plan' else '등각도'}",
+           f"최대 {d.results.max_stress_mpa:.1f} MPa @E{d.results.max_stress_element_id} · σ허용 {d.results.allowable_mpa:g} MPa"
+           f" · 초과 {d.results.exceed_count}개 · 회색 = 결과 없음")
     _axis_labels(ax, view)
     return _png(fig)
 

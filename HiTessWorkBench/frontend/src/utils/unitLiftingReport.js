@@ -5,10 +5,26 @@
  * 같은 필드를 Studio(UnitStructuralReportDialog)도 쓰므로 규칙은 여기 한 곳에만 둔다.
  */
 
-/** BDF/JSON 파일명의 `1234-56789` 패턴 → 호선·유닛. 없으면 빈 문자열. */
+/**
+ * BDF/JSON 파일명 → 호선·유닛. 없으면 빈 문자열.
+ * 호선 = 4자리 숫자, 유닛 = 그 뒤 '-' 또는 '_' 다음 영숫자 3자 이상(숫자 하나 이상 포함) + 선택 '-1' 같은 짧은 번호.
+ *   3496-35210-A508372_20260108_edit.bdf → 3496 / 35210
+ *   3615-324L0-1_Ceiling_Crane.json      → 3615 / 324L0-1   (2026-11-26 — 영문이 섞인 유닛을 못 뽑던 결함)
+ * 백엔드 collector._parse_ids, WorkBench utils/unitLiftingReport.js, Studio utils/unitLiftingReportForm.js 가 같은 규칙이다.
+ */
 export function deriveIds(fileName = '') {
-  const m = /(?<!\d)(\d{4})[-_](\d{5})(?!\d)/.exec(String(fileName || ''));
-  return { hullNo: m ? m[1] : '', unitNo: m ? m[2] : '' };
+  const base = String(fileName || '').split(/[\\/]/).pop();
+  const re = /(?<![0-9A-Za-z])(\d{4})[-_]([0-9A-Za-z]{3,})(-\d{1,2})?(?=[-_.\s]|$)/g;
+  for (const m of base.matchAll(re)) {
+    if (/\d/.test(m[2])) return { hullNo: m[1], unitNo: m[2] + (m[3] ?? '') };
+  }
+  return { hullNo: '', unitNo: '' };
+}
+
+/** 여러 후보 이름(단계 파일명, 원본 BDF 경로 등) 중 호선을 뽑을 수 있는 첫 이름. 없으면 첫 빈칸 아닌 이름. */
+export function pickIdSource(...names) {
+  const list = names.map(n => String(n ?? '')).filter(Boolean);
+  return list.find(n => deriveIds(n).hullNo) ?? list[0] ?? '';
 }
 
 /**
@@ -40,7 +56,7 @@ export function initialReportForm(fileName = '') {
  * `1`·`01`·`rev1` → `_rev01`, `A` → `_revA`, 비면 `''`.
  */
 export function revisionSuffix(revision) {
-  const raw = String(revision ?? '').trim().replace(/^rev\.?\s*/i, '').replace(/[<>:"/\\|?*\s]+/g, '')
+  const raw = String(revision ?? '').trim().replace(/^rev\.?\s*/i, '').replace(/[^0-9A-Za-z.-]+/g, '')
   if (!raw) return ''
   return /^\d+$/.test(raw) ? `_rev${String(Number(raw)).padStart(2, '0')}` : `_rev${raw}`
 }

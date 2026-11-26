@@ -10,8 +10,8 @@ import shutil
 from openpyxl import load_workbook
 
 from app.services.unit_lifting_report import result_report as RR
-from app.services.unit_lifting_report.collector import collect, ReportOptions
-from app.services.unit_lifting_report_service import generate_result_report
+from app.services.unit_lifting_report.collector import ADVISORY_ACTION, collect, ReportOptions
+from app.services.unit_lifting_report_service import generate_result_report, generate_unit_lifting_report
 
 FIX = os.path.join(os.path.dirname(__file__), "fixtures", "unit_lifting_report")
 STEM = "3496-35210-A508372_20260108_edit"
@@ -30,6 +30,9 @@ def _copy_fixture(tmp_path, mode, fail):
         stab_path = tmp_path / f"{STEM}_stability.json"
         stab = json.loads(stab_path.read_text(encoding="utf-8"))
         stab["overall"]["status"] = "fail"
+        us = stab["overall"].setdefault("userSummary", {})
+        us["primaryMessage"] = "현재 권상 조건은 그대로 진행하기 어렵습니다. 아래 핵심 문제를 먼저 수정하세요."
+        us["criticalIssues"] = [{"stage": 7, "target": "Lug N101", "headline": "SWL 초과", "message": "슬링 하중이 SWL 을 넘습니다."}]
         for s in stab["stages"]:
             if s.get("stage") == 6:
                 s["status"] = "fail"
@@ -47,7 +50,25 @@ def test_collector_reads_mode_and_flags_advisory(tmp_path):
     d = collect(_copy_fixture(tmp_path, "advisory", fail=True), ReportOptions())
     assert d.stability.evaluation_mode == "advisory"
     assert d.stability.advisory_unmet is True
-    assert d.verdicts.actions[0].startswith("자세안정성 FAIL 인 채 Advisory 모드로 진행한 해석")
+    assert d.verdicts.actions[0] == ADVISORY_ACTION
+    # 보고서 판정은 WARN, 엔진 판정 값은 그대로 FAIL(2026-11-26 사용자 지시)
+    assert d.verdicts.stability == "warn"
+    assert d.stability.overall_status == "fail"
+
+
+def test_detail_report_writes_warn_not_fail_for_advisory(tmp_path):
+    info = _copy_fixture(tmp_path, "advisory", fail=True)
+    _name, data, _w, summary = generate_unit_lifting_report(info, {}, generated_by="A476854")
+    assert summary["stability"] == "warn"
+    ws = load_workbook(io.BytesIO(data))["Report"]
+    cells = [str(c.value) for row in ws.iter_rows() for c in row if c.value is not None]
+    assert "FAIL" not in cells                       # 표지 판정 칸, 7단계 표의 판정 칸
+    joined = "\n".join(cells)
+    assert "종합 판정: WARN (Advisory)" in joined
+    assert "자세 안정성: WARN" in joined             # 6. 결론
+    assert "엔진 7단계 종합 판정 (Advisory: WARN 기록)" in joined
+    assert "그대로 진행하기 어렵습니다" not in joined     # 엔진 FAIL 문장은 WARN 옆에 붙이지 않는다
+    assert "[엔진 FAIL 항목] [7단계 · Lug N101] SWL 초과" in joined   # 핵심 문제는 따로 남긴다
 
 
 def test_fail_with_standard_posture_still_flags_report(tmp_path):
@@ -56,7 +77,8 @@ def test_fail_with_standard_posture_still_flags_report(tmp_path):
     d = collect(info, ReportOptions())
     assert d.stability.advisory_unmet is True
     assert d.stability.evaluation_mode == "advisory"
-    assert d.verdicts.actions[0].startswith("자세안정성 FAIL 인 채 Advisory 모드로 진행한 해석")
+    assert d.verdicts.actions[0] == ADVISORY_ACTION
+    assert d.verdicts.stability == "warn"
     _name, data, _w, _s = generate_result_report(info, {}, generated_by="A476854")
     ws = load_workbook(io.BytesIO(data))["Report"]
     assert ws[f"F{RR.NOTICE_EXTRA_ROW}"].value == RR.NOTICE_ADVISORY_LINE
@@ -67,6 +89,7 @@ def test_collector_standard_pass_unchanged(tmp_path):
     assert d.stability.evaluation_mode == "standard"
     assert d.stability.advisory_unmet is False
     assert not any("Advisory" in a for a in d.verdicts.actions)
+    assert d.stability.report_status("fail") == "fail"   # Advisory 가 아니면 바꾸지 않는다
 
 
 def test_result_report_notice_row_shows_advisory_and_warns_lost_user_line(tmp_path):

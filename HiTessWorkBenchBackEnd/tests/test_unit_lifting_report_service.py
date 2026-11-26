@@ -18,7 +18,8 @@ def test_generate_returns_named_workbook_and_summary():
     name, data, warnings, summary = generate_unit_lifting_report(
         INFO, {"revision": "A", "department": "구조기본설계부"}, generated_by="A476854")
     # 리비전은 파일명 맨 끝(확장자 앞)에 붙는다 — 2026-10-13 사용자 요청
-    assert name.startswith("3496-35210_Hydro_Crane_Module_Unit_권상_구조_검토_보고서_")
+    assert name.startswith("3496-35210_Hydro_Crane_Unit_Lifting_Structural_Review_Report_")
+    assert name.isascii()
     assert name.endswith("_revA.xlsx")
     wb = load_workbook(io.BytesIO(data))
     assert wb.sheetnames == ["Report", "Members", "Displacements", "Wires"]

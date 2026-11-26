@@ -250,7 +250,7 @@ class ReportSheet:
 
     # ── 공개 프리미티브 ─────────────────────────────────────────────────────
     def cover(self, title: str, facts: Sequence[tuple[str, str]], verdicts: Sequence[tuple[str, str, str]],
-              subtitle: str = "Structural Review Report for Module Unit Lifting"):
+              subtitle: str = "Structural Review Report for Unit Lifting"):
         self._ensure(1, cover=True)
         r = self._take(4)
         self._cell(r, 1, COLS, title, size=22, bold=True, color=NAVY, align="center", valign="center", rows=4)

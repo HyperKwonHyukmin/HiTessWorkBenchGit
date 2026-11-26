@@ -41,7 +41,9 @@ def test_sheets_present(built):
 def test_cover_summary_and_verdict_text(built):
     _data, wb = built
     joined = "\n".join(str(c.value) for row in wb["Report"].iter_rows() for c in row if c.value is not None)
-    assert "Module Unit 권상 구조 검토 보고서" in joined
+    assert "Unit 권상 구조 검토 보고서" in joined
+    assert "Module Unit 권상" not in joined and "Group Unit" not in joined
+    assert "Hi-TESS WorkBench / Module Unit Studio" in joined      # 플랫폼 줄은 Studio 이름 그대로
     assert "HULL NO." in joined and "3496" in joined
     assert "허용응력을 초과하는 부재는 없습니다" in joined
     assert "145.76" in joined and "23.52" in joined
