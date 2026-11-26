@@ -37,6 +37,7 @@ UPDATE_WEB_DIR = Path(__file__).resolve().parent.parent.parent / "UpdateWeb"
 _ENTRY_RE = re.compile(r"^[0-9a-z][0-9a-z-]{0,63}$")
 _SECTION_RE = re.compile(r"^[a-z][0-9a-z-]{0,31}$")
 _DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_TAG_MAX_LEN, _TAG_MAX_COUNT = 16, 6
 _ASSET_TYPES = {
     ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp",
     ".svg": "image/svg+xml", ".gif": "image/gif",
@@ -56,16 +57,35 @@ def _read(path: Path) -> bytes:
     return data
 
 
-def load_entries() -> list[dict]:
-    """updates.json 의 안내 목록(최신이 앞). 모양이 틀린 항목은 빼고 나머지만 — 한 항목 실수로 페이지 전체가 깨지지 않게."""
+def _load_data() -> dict:
     path = UPDATE_WEB_DIR / "updates.json"
     if not path.is_file():
-        return []
+        return {}
     try:
         data = json.loads(_read(path).decode("utf-8"))
     except (ValueError, UnicodeDecodeError):
-        return []
-    items = data.get("entries") if isinstance(data, dict) else None
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _clean_tags(raw, limit: int = _TAG_MAX_COUNT) -> list[str]:
+    """태그(검색과 묶어 보기용, 2026-11-26) — 짧은 글자만, 겹치면 하나로, 안내 하나에 많아야 6개."""
+    out = []
+    for t in raw if isinstance(raw, list) else []:
+        if isinstance(t, str) and 0 < len(t.strip()) <= _TAG_MAX_LEN and t.strip() not in out:
+            out.append(t.strip())
+    return out[:limit]
+
+
+def load_tag_list(data: dict | None = None) -> list[str]:
+    """태그 목록(updates.json 의 tagList) — 페이지 왼쪽 태그 단추의 순서. 안내에 태그를 달 때 여기서 고른다."""
+    return _clean_tags((data if data is not None else _load_data()).get("tagList"), limit=200)
+
+
+def load_entries(data: dict | None = None) -> list[dict]:
+    """updates.json 의 안내 목록(최신이 앞). 모양이 틀린 항목은 빼고 나머지만 — 한 항목 실수로 페이지 전체가 깨지지 않게."""
+    data = data if data is not None else _load_data()
+    items = data.get("entries")
     out, seen = [], set()
     for item in items if isinstance(items, list) else []:
         if not isinstance(item, dict):
@@ -78,7 +98,7 @@ def load_entries() -> list[dict]:
         sections = [s for s in item.get("sections") or []
                     if isinstance(s, dict) and isinstance(s.get("id"), str) and _SECTION_RE.match(s["id"])]
         seen.add(entry_id)
-        out.append({**item, "sections": sections})
+        out.append({**item, "sections": sections, "tags": _clean_tags(item.get("tags"))})
     out.sort(key=lambda e: e["date"], reverse=True)   # 같은 날은 파일 순서(안정 정렬)
     return out
 
@@ -115,7 +135,8 @@ def updates_page():
 
 @router.api_route("/updates/updates.json", methods=["GET", "HEAD"], include_in_schema=False)
 def updates_json():
-    return JSONResponse({"entries": load_entries()}, headers=_NO_CACHE)
+    data = _load_data()
+    return JSONResponse({"entries": load_entries(data), "tags": load_tag_list(data)}, headers=_NO_CACHE)
 
 
 @router.post("/updates/beacon", include_in_schema=False)

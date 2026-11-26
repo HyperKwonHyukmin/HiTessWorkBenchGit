@@ -97,13 +97,33 @@ figcaption{margin-top:8px;font-size:13.5px;color:var(--ink-muted)}
 .moved button{display:block;font:inherit;background:none;border:0;padding:2px 0;color:var(--navy-2);text-decoration:underline;text-underline-offset:3px;cursor:pointer;text-align:left}
 .moved button[aria-current="true"]{font-weight:700;text-decoration:none;color:var(--ink)}
 
+/* 검색과 태그(2026-11-26) — 제목, 요약, 본문, 그림 설명, 태그를 띄어쓰기 없이 비교한다 */
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.search{padding:0 12px 14px}
+.search input,.picker input{width:100%;font:inherit;font-size:14.5px;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink)}
+.search input:focus,.picker input:focus{border-color:var(--navy-2);outline:none;box-shadow:0 0 0 3px rgba(37,99,235,.15)}
+.hits{display:flex;gap:8px;align-items:center;margin-top:6px;font-size:12.5px;color:var(--ink-muted);min-height:1.2em}
+.hits button{font:inherit;font-size:12.5px;background:none;border:0;padding:0;color:var(--navy-2);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.list h2.tags-h{padding-top:14px}
+.tagbox{display:flex;flex-wrap:wrap;gap:6px;padding:0 12px 14px;border-bottom:1px solid var(--line)}
+.chip{font:inherit;font-size:12.5px;font-weight:600;color:var(--ink-body);background:var(--paper);border:1px solid var(--line);border-radius:999px;padding:2px 10px;cursor:pointer;line-height:1.6}
+.chip:hover{border-color:var(--navy-2);color:var(--navy-2)}
+.chip[aria-pressed="true"]{background:var(--navy);border-color:var(--navy);color:#fff}
+.chip .n{margin-left:4px;font-size:11.5px;color:var(--ink-muted);font-variant-numeric:tabular-nums}
+.chip[aria-pressed="true"] .n{color:var(--navy-dim)}
+.etags{margin-top:14px;display:flex;flex-wrap:wrap;gap:6px}
+.etags .chip::before{content:"#";color:var(--ink-muted);margin-right:1px}
+.list .none{padding:16px 12px;font-size:14px;color:var(--ink-muted)}
+
 .picker{display:none}
 @media (max-width:860px){
   .shell{grid-template-columns:minmax(0,1fr)}
   .list{display:none}
-  .picker{display:block;padding:12px 16px;background:var(--paper);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2}
+  .picker{display:block;padding:12px 16px;background:var(--paper);border-bottom:1px solid var(--line)}
   .picker label{display:block;font-size:12.5px;font-weight:700;color:var(--ink-muted);margin-bottom:4px}
-  .picker .row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:8px}
+  .picker .row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;margin-top:10px}
+  .picker .one{margin-top:10px}
+  .picker .n2{font-weight:500}
   .picker select{width:100%;font:inherit;font-size:15px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink)}
   .doc{border:0}
   .doc-in{padding:28px 16px 56px}
@@ -120,35 +140,66 @@ figcaption{margin-top:8px;font-size:13.5px;color:var(--ink-muted)}
   <img src="img/logo.png" alt="Hi-TESS WorkBench" width="783" height="147">
   <span><b>업데이트 안내</b></span>
 </div></header>
-<div class="picker"><div class="row">
-  <div><label for="pick-app">App</label><select id="pick-app"></select></div>
-  <div><label for="pick">안내 고르기</label><select id="pick"></select></div>
-</div></div>
+<div class="picker">
+  <label for="q2">안내 검색</label><input id="q2" type="search" placeholder="기능, 화면 이름, 태그로 찾기" autocomplete="off">
+  <div class="row">
+    <div><label for="pick-app">App</label><select id="pick-app"></select></div>
+    <div><label for="pick-tag">태그</label><select id="pick-tag"></select></div>
+  </div>
+  <div class="one"><label for="pick">안내 고르기 <span class="n2" id="hits2"></span></label><select id="pick"></select></div>
+</div>
 <div class="shell">
-  <nav class="list" aria-label="업데이트 안내 목록"><h2>App 별로 보기</h2><ul class="apps" id="apps"></ul><div id="list"></div></nav>
+  <nav class="list" aria-label="업데이트 안내 목록">
+    <div class="search"><label for="q" class="sr">안내 검색</label><input id="q" type="search" placeholder="기능, 화면 이름, 태그로 찾기" autocomplete="off"><div class="hits" id="hits" aria-live="polite"></div></div>
+    <h2>App 별로 보기</h2><ul class="apps" id="apps"></ul>
+    <h2 class="tags-h">태그</h2><div class="tagbox" id="tagbox"></div>
+    <div id="list"></div></nav>
   <main class="doc" id="doc" tabindex="-1"><div class="empty">불러오는 중입니다.</div></main>
 </div>
 <script>
 (function(){
   var embed = /[?&]embed=1\b/.test(location.search);
   if (embed) document.documentElement.classList.add('embed');
-  var entries = [], current = null, appFilter = '';   // appFilter '' = 전체
+  var entries = [], tagList = [], current = null, appFilter = '', tagFilter = '', query = '';   // '' = 전체
   var listEl = document.getElementById('list'), docEl = document.getElementById('doc'), pick = document.getElementById('pick');
   var appsEl = document.getElementById('apps'), pickApp = document.getElementById('pick-app');
+  var qEl = document.getElementById('q'), q2El = document.getElementById('q2'), hitsEl = document.getElementById('hits'), hits2El = document.getElementById('hits2');
+  var tagboxEl = document.getElementById('tagbox'), pickTag = document.getElementById('pick-tag');
   var OTHER = '기타';
   function appOf(e){ return e.app || OTHER; }
-  function shown(){ return appFilter ? entries.filter(function(e){ return appOf(e) === appFilter; }) : entries; }
+  // ── 검색 — 띄어쓰기와 대소문자를 무시하고, 낱말을 여럿 쓰면 모두 들어 있는 안내만 ──
+  function norm(s){ return String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ''); }
+  function hayOf(e){
+    if (e.__hay != null) return e.__hay;
+    var parts = [e.title, e.summary, e.app, e.version].concat(e.tags || []);
+    (e.sections || []).forEach(function(s){
+      parts.push(s.heading, s.note);
+      (s.body || []).concat(s.steps || [], s.points || []).forEach(function(t){ parts.push(t); });
+      (s.facts || []).forEach(function(f){ parts.push(f.label, f.text); });
+      (s.images || (s.image ? [s.image] : [])).forEach(function(im){ if (im) parts.push(im.caption, im.alt); });
+    });
+    e.__hay = norm(parts.join(' '));
+    return e.__hay;
+  }
+  function words(){ return query.split(/\s+/).map(norm).filter(Boolean); }
+  function hitText(e){ var w = words(); return !w.length || w.every(function(x){ return hayOf(e).indexOf(x) >= 0; }); }
+  function hitTag(e){ return !tagFilter || (e.tags || []).indexOf(tagFilter) >= 0; }
+  function hitApp(e){ return !appFilter || appOf(e) === appFilter; }
+  function shown(){ return entries.filter(function(e){ return hitApp(e) && hitTag(e) && hitText(e); }); }
+  function filtering(){ return !!(appFilter || tagFilter || words().length); }
 
   // 왼쪽 'App 별로 보기' — 안내가 많은 App 부터. 고르면 그 App 안내만 목록과 이전·다음에 남는다.
   function renderApps(){
     var counts = {};
-    entries.forEach(function(e){ counts[appOf(e)] = (counts[appOf(e)] || 0) + 1; });
-    var names = Object.keys(counts).sort(function(a, b){ return counts[b] - counts[a] || a.localeCompare(b, 'ko'); });
+    var all = {}, base = entries.filter(function(e){ return hitTag(e) && hitText(e); });
+    entries.forEach(function(e){ all[appOf(e)] = 1; });
+    base.forEach(function(e){ counts[appOf(e)] = (counts[appOf(e)] || 0) + 1; });
+    var names = Object.keys(all).sort(function(a, b){ return (counts[b] || 0) - (counts[a] || 0) || a.localeCompare(b, 'ko'); });
     appsEl.textContent = ''; pickApp.textContent = '';
-    [['', '전체', entries.length]].concat(names.map(function(n){ return [n, n, counts[n]]; })).forEach(function(row){
+    [['', '전체', base.length]].concat(names.map(function(n){ return [n, n, counts[n]]; })).forEach(function(row){
       var li = el('li'), b = el('button', 'app-btn');
       b.type = 'button'; b.dataset.app = row[0]; b.setAttribute('aria-pressed', row[0] === appFilter ? 'true' : 'false');
-      b.appendChild(el('span', null, row[1])); b.appendChild(el('span', 'n', String(row[2])));
+      b.appendChild(el('span', null, row[1])); b.appendChild(el('span', 'n', String(row[2] || 0)));
       b.addEventListener('click', function(){ setApp(row[0]); });
       li.appendChild(b); appsEl.appendChild(li);
       var o = el('option', null, row[1] + ' (' + row[2] + ')'); o.value = row[0]; pickApp.appendChild(o);
@@ -158,7 +209,7 @@ figcaption{margin-top:8px;font-size:13.5px;color:var(--ink-muted)}
   function setApp(name){
     appFilter = name;
     var hadFocus = document.activeElement && document.activeElement.classList.contains('app-btn');
-    renderApps(); renderList();
+    refresh();
     // 단추를 새로 그려도 키보드 초점은 방금 누른 App 에 남긴다
     if (hadFocus) appsEl.querySelectorAll('.app-btn').forEach(function(b){ if (b.dataset.app === name) b.focus(); });
     var list = shown();
@@ -169,9 +220,58 @@ figcaption{margin-top:8px;font-size:13.5px;color:var(--ink-muted)}
       if (m && m.io) docEl.querySelectorAll('[data-section]').forEach(function(sec){ m.io.observe(sec); });
     }
   }
+  // 태그 단추 — 태그 목록 순서, 지금 조건(App, 검색)에서 그 태그 안내 수. 0건 태그는 숨긴다(고른 태그는 남긴다).
+  function renderTags(){
+    var counts = {}, base = entries.filter(function(e){ return hitApp(e) && hitText(e); });
+    base.forEach(function(e){ (e.tags || []).forEach(function(t){ counts[t] = (counts[t] || 0) + 1; }); });
+    var names = tagList.slice();
+    Object.keys(counts).forEach(function(t){ if (names.indexOf(t) < 0) names.push(t); });
+    tagboxEl.textContent = ''; pickTag.textContent = '';
+    var o0 = el('option', null, '전체 태그'); o0.value = ''; pickTag.appendChild(o0);
+    names.forEach(function(t){
+      if (!counts[t] && t !== tagFilter) return;
+      var b = el('button', 'chip'); b.type = 'button'; b.dataset.tag = t;
+      b.setAttribute('aria-pressed', t === tagFilter ? 'true' : 'false');
+      b.appendChild(document.createTextNode(t)); b.appendChild(el('span', 'n', String(counts[t] || 0)));
+      b.addEventListener('click', function(){ setTag(t === tagFilter ? '' : t); });
+      tagboxEl.appendChild(b);
+      var o = el('option', null, t + ' (' + (counts[t] || 0) + ')'); o.value = t; pickTag.appendChild(o);
+    });
+    pickTag.value = tagFilter;
+  }
+  function renderHits(){
+    hitsEl.textContent = ''; hits2El.textContent = '';
+    if (!filtering()) return;
+    var n = shown().length, txt = n ? '찾은 안내 ' + n + '건' : '찾는 안내가 없습니다';
+    hitsEl.appendChild(el('span', null, txt)); hits2El.textContent = '(' + txt + ')';
+    var c = el('button', null, '조건 지우기'); c.type = 'button';
+    c.addEventListener('click', function(){ clearFilters(); qEl.focus(); });
+    hitsEl.appendChild(c);
+  }
+  function refresh(){ renderApps(); renderTags(); renderList(); renderHits(); }
+  function setTag(t){
+    // 다시 그리기 전에 초점 자리를 본다 — 왼쪽 태그 단추를 키보드로 눌렀으면 같은 태그 단추에 초점을 돌려준다
+    var from = document.activeElement && document.activeElement.classList.contains('chip') && tagboxEl.contains(document.activeElement)
+      ? document.activeElement.dataset.tag : null;
+    tagFilter = t; refresh();
+    if (from != null) {
+      var again = null;
+      tagboxEl.querySelectorAll('.chip').forEach(function(b){ if (b.dataset.tag === from) again = b; });
+      (again || tagboxEl.querySelector('.chip') || qEl).focus();
+    }
+    if (current) { mark(current); updatePager(); }
+  }
+  function setQuery(v, from){
+    query = v || '';
+    if (from !== qEl) qEl.value = query;
+    if (from !== q2El) q2El.value = query;
+    refresh(); if (current) { mark(current); updatePager(); }
+  }
+  function clearFilters(){ appFilter = ''; tagFilter = ''; setQuery(''); }
   function mark(e){
     listEl.querySelectorAll('.item').forEach(function(b){ b.setAttribute('aria-current', b.dataset.id === e.id ? 'true' : 'false'); });
     pick.value = e.id;
+    if (pick.value !== e.id) pick.value = '';
   }
 
   function el(tag, cls, text){ var n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
@@ -217,8 +317,16 @@ figcaption{margin-top:8px;font-size:13.5px;color:var(--ink-muted)}
   // ── 그리기 ──
   function renderList(){
     listEl.textContent = ''; pick.textContent = '';
-    var lastMonth = null, ol = null;
-    shown().forEach(function(e){
+    var lastMonth = null, ol = null, rows = shown();
+    if (!rows.length) {
+      listEl.appendChild(el('div', 'none', '조건에 맞는 안내가 없습니다.'));
+      var none = el('option', null, '찾는 안내가 없습니다'); none.value = ''; none.disabled = true; pick.appendChild(none);
+    }
+    if (rows.length && current && rows.indexOf(current) < 0) {
+      // 좁은 화면의 '안내 고르기' — 지금 보는 안내가 찾은 결과 밖이면 빈 칸 대신 안내 글을 보인다
+      var ph = el('option', null, '찾은 안내 ' + rows.length + '건에서 고르세요'); ph.value = ''; ph.disabled = true; pick.appendChild(ph);
+    }
+    rows.forEach(function(e){
       var mo = monthOf(e.date);
       if (mo !== lastMonth) { listEl.appendChild(el('div', 'month', mo)); ol = el('ol'); listEl.appendChild(ol); lastMonth = mo; }
       var li = el('li'), b = el('button', 'item');
@@ -264,9 +372,25 @@ figcaption{margin-top:8px;font-size:13.5px;color:var(--ink-muted)}
     if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(url).then(function(){ done(true); }, function(){ done(fallback()); });
     else done(fallback());
   }
+  // 이전 다음 안내 — 지금 조건(App, 태그, 검색) 안에서. 조건 밖 안내를 보고 있으면 전체 안에서.
+  function buildPager(e){
+    var list = shown().indexOf(e) >= 0 ? shown() : entries, idx = list.indexOf(e);
+    var pager = el('nav', 'pager'); pager.setAttribute('aria-label', '이전 다음 안내');
+    function pbtn(target, label, cls){ var b = el('button', cls); b.type = 'button';
+      b.appendChild(el('small', null, label)); b.appendChild(document.createTextNode(target.title));
+      b.addEventListener('click', function(){ go(target.id, true); }); return b; }
+    if (list[idx + 1]) pager.appendChild(pbtn(list[idx + 1], '이전 안내', 'prev'));
+    if (list[idx - 1]) pager.appendChild(pbtn(list[idx - 1], '다음 안내', 'next'));
+    return pager.childNodes.length ? pager : null;
+  }
+  function updatePager(){
+    if (!current) return;
+    var old = docEl.querySelector('.pager'), pg = buildPager(current);
+    if (old && pg) old.replaceWith(pg);
+    else if (old) old.remove();
+    else if (pg) { var w = docEl.querySelector('.doc-in'); if (w) w.appendChild(pg); }
+  }
   function renderEntry(e, moved){
-    var list = shown().indexOf(e) >= 0 ? shown() : entries;   // 이전·다음은 지금 고른 App 안에서
-    var idx = list.indexOf(e);
     var wrap = el('div', 'doc-in'), meta = el('div', 'meta');
     if (moved) {
       var box = el('div', 'moved'); box.setAttribute('role', 'status');
@@ -295,6 +419,15 @@ figcaption{margin-top:8px;font-size:13.5px;color:var(--ink-muted)}
     wrap.appendChild(meta);
     wrap.appendChild(el('h1', null, e.title));
     if (e.summary) wrap.appendChild(el('p', 'lead', e.summary));
+    if (e.tags && e.tags.length) {
+      var et = el('div', 'etags'); et.setAttribute('aria-label', '이 안내의 태그');
+      e.tags.forEach(function(t){
+        var b = el('button', 'chip', t); b.type = 'button'; b.title = "'" + t + "' 태그 안내만 목록에 보기";
+        b.addEventListener('click', function(){ setTag(t); });
+        et.appendChild(b);
+      });
+      wrap.appendChild(et);
+    }
     var secs = e.sections || [];
     if (secs.length > 2) {
       var toc = el('nav', 'toc'); toc.setAttribute('aria-label', '이 안내의 구획');
@@ -305,13 +438,7 @@ figcaption{margin-top:8px;font-size:13.5px;color:var(--ink-muted)}
     }
     secs.forEach(function(s){ wrap.appendChild(renderSection(s)); });
     var end = el('div'); end.setAttribute('data-section', '__end'); end.style.height = '1px'; wrap.appendChild(end);
-    var pager = el('nav', 'pager'); pager.setAttribute('aria-label', '이전 다음 안내');
-    function pbtn(target, label, cls){ var b = el('button', cls); b.type = 'button';
-      b.appendChild(el('small', null, label)); b.appendChild(document.createTextNode(target.title));
-      b.addEventListener('click', function(){ go(target.id, true); }); return b; }
-    if (list[idx + 1]) pager.appendChild(pbtn(list[idx + 1], '이전 안내', 'prev'));
-    if (list[idx - 1]) pager.appendChild(pbtn(list[idx - 1], '다음 안내', 'next'));
-    if (pager.childNodes.length) wrap.appendChild(pager);
+    var pg = buildPager(e); if (pg) wrap.appendChild(pg);
     docEl.textContent = ''; docEl.appendChild(wrap);
     return secs.map(function(s){ return s.id; });
   }
@@ -325,7 +452,7 @@ figcaption{margin-top:8px;font-size:13.5px;color:var(--ink-muted)}
     e = e || entries[0];
     if (!e || (current && current.id === e.id)) return;
     // 고른 App 밖의 안내로 오면(뒤로 가기, 공유 주소) 필터를 풀어 목록과 표시를 맞춘다
-    if (appFilter && shown().indexOf(e) < 0) { appFilter = ''; renderApps(); renderList(); }
+    if (filtering() && shown().indexOf(e) < 0) { appFilter = ''; tagFilter = ''; query = ''; qEl.value = ''; q2El.value = ''; refresh(); }
     current = e;
     document.title = e.title + ' | Workbench 업데이트 안내';
     mark(e);
@@ -347,6 +474,9 @@ figcaption{margin-top:8px;font-size:13.5px;color:var(--ink-muted)}
 
   pick.addEventListener('change', function(){ go(pick.value, true); });
   pickApp.addEventListener('change', function(){ setApp(pickApp.value); });
+  pickTag.addEventListener('change', function(){ setTag(pickTag.value); });
+  qEl.addEventListener('input', function(){ setQuery(qEl.value, qEl); });
+  q2El.addEventListener('input', function(){ setQuery(q2El.value, q2El); });
   // 처음 보일 안내 = 주소 끝(/updates/<id>) → 옛 방식 #<id> → 최신
   function idFromUrl(){
     var seg = location.pathname.replace(/\/+$/, '').split('/').pop();
@@ -358,9 +488,16 @@ figcaption{margin-top:8px;font-size:13.5px;color:var(--ink-muted)}
 
   fetch('updates.json', { cache: 'no-cache' }).then(function(r){ return r.json(); }).then(function(data){
     entries = (data && data.entries) || [];
+    tagList = (data && data.tags) || [];
     if (!entries.length) { docEl.innerHTML = '<div class="empty">아직 안내가 없습니다.</div>'; return; }
-    renderApps(); renderList();
-    go(idFromUrl(), false);
+    // 주소의 ?q=…, ?tag=… 로 검색한 채 열 수 있다(공유용). 주소에 다시 쓰지는 않는다.
+    var sp = new URLSearchParams(location.search);
+    if (sp.get('tag')) tagFilter = sp.get('tag');
+    if (sp.get('q')) { query = sp.get('q'); qEl.value = query; q2El.value = query; }
+    refresh();
+    // 주소에 안내 id 가 없고 거른 채 열었으면 거른 결과의 첫 안내를 보인다(최신 안내가 조건 밖이라 조건이 풀리지 않게)
+    var first = shown()[0];
+    go(idFromUrl() || (filtering() && first ? first.id : ''), false);
   }).catch(function(){ docEl.innerHTML = '<div class="empty">안내를 불러오지 못했습니다. 잠시 뒤 새로고침해 주세요.</div>'; });
 })();
 </script>

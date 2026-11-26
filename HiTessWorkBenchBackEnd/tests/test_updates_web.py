@@ -12,9 +12,10 @@ from app.main import app
 from app.routers import updates_web
 from app.services import update_page_stats
 
-ENTRIES = {"entries": [
+ENTRIES = {"tagList": ["보고서", "편집", "보고서", "", 7], "entries": [
     {"id": "2026-11-01-old", "date": "2026-11-01", "title": "옛 안내", "sections": [{"id": "how", "heading": "사용"}]},
     {"id": "2026-11-12-new", "date": "2026-11-12", "title": "새 안내", "programs": ["GroupModuleUnit"],
+     "tags": ["보고서", " 보고서 ", "", 3, "가" * 17, "편집", "a", "b", "c", "d", "e"],
      "sections": [{"id": "what", "heading": "무엇"}, {"id": "how", "heading": "사용"}, {"id": "BAD id"}]},
     {"id": "../evil", "date": "2026-11-12", "title": "모양 틀림"},
     {"id": "2026-11-13-nodate", "title": "날짜 없음"},
@@ -54,6 +55,15 @@ def test_page_and_list_without_login(client):
     # 최신이 앞, 모양이 틀린 항목(id·날짜)은 빠지고, 틀린 구획 id 도 빠진다
     assert [e["id"] for e in entries] == ["2026-11-12-new", "2026-11-01-old"]
     assert [s["id"] for s in entries[0]["sections"]] == ["what", "how"]
+
+
+def test_tags_cleaned_and_listed(client):
+    """태그(2026-11-26) — 글자만, 겹침 하나로, 16자 넘으면 빼고, 안내 하나에 6개까지. 목록은 tagList 순서."""
+    data = client.get("/updates/updates.json").json()
+    assert data["tags"] == ["보고서", "편집"]
+    new, old = data["entries"]
+    assert new["tags"] == ["보고서", "편집", "a", "b", "c", "d"]
+    assert old["tags"] == []
 
 
 def test_entry_address_serves_same_page(client):
@@ -161,6 +171,15 @@ def test_repo_updates_json_is_valid():
             for im in s.get("images") or ([s["image"]] if s.get("image") else []):
                 assert (updates_web.UPDATE_WEB_DIR / im["src"]).is_file()
     assert (updates_web.UPDATE_WEB_DIR / "fonts" / "SUIT-Variable.woff2").read_bytes()[:4] == b"wOF2"
+
+
+def test_repo_tags_come_from_tag_list():
+    """저장소의 실제 안내 — 모든 안내에 태그 1~4개, 모두 tagList 에 있는 이름(검색과 태그 단추가 갈라지지 않게)."""
+    tag_list = updates_web.load_tag_list()
+    assert tag_list and len(tag_list) == len(set(tag_list))
+    for e in updates_web.load_entries():
+        assert 1 <= len(e["tags"]) <= 4, e["id"]
+        assert all(t in tag_list for t in e["tags"]), e["id"]
 
 
 def test_changelog_pages_point_to_real_entries():
