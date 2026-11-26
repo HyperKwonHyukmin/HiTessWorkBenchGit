@@ -1,0 +1,1 @@
+var e=`http://10.14.42.145:9091`;function t(){try{let e=localStorage.getItem(`server_url`);if(e&&e.trim())return e.trim().replace(/\/$/,``)}catch{}return e}var n=t();function r(e){let t=e.trim().replace(/\/$/,``);localStorage.setItem(`server_url`,t),n=t}export{r as n,n as t};
