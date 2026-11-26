@@ -52,6 +52,12 @@
 ### 사용자 업데이트 안내 페이지 `/updates` (2026-11-12)
 
 기능 업데이트를 사용자에게 알리는 공개 페이지 **한 장**(로그인 없음). 안내는 누적되고 왼쪽 목록으로 이전 안내를 본다.
+- ★ **안내 1건 = 기능 1개 (2026-11-26, 사용자 지시 'LogBook 처럼')** — 기능마다 주소(`/updates/<id>`)가 하나라, 그 기능의 사용자에게 그 주소만 보낸다. 예전에는 App 하나에 기능 3~6개를 묶었다.
+  그날 기존 안내 6건을 21건으로 나눴다(11-19 Mooring 고정 범위 안내는 원래 한 기능이라 그대로). 나뉜 안내는 `formerId` = 옛 안내 id 를 가진다.
+  옛 주소로 들어오면 나뉜 안내 중 첫 안내를 보이고, 머리에 '이 주소의 안내는 기능마다 한 건씩 나뉘었습니다' 와 같은 때 나온 안내 목록을 띄운다(메일로 보낸 옛 링크를 살리려고). 없는 주소면 최신 안내 + '찾는 안내가 없어' 알림.
+  안내 머리의 **[링크 복사]**(브라우저에서 열었을 때만, 앱 안 창은 창 머리의 [복사]) — 사내 http 주소는 보안 연결이 아니라 `navigator.clipboard` 가 없을 수 있어 예전 복사 방식으로도 시도한다.
+  대시보드 NEW 는 옛 안내를 그 PC 에서 열었으면 나뉜 안내를 본 것으로 친다(`utils/updateNotices.js`, 새 exe 부터). 조회 통계의 옛 안내 id 기록은 표에 남지만 화면(안내 목록 기준)에는 더 나오지 않는다.
+  그림 규칙: 해석 결과 그림은 실제 결과 폴더(전체 모델)로 그린다(`tests/fixtures` 는 부재를 줄여 조각나 보인다), 이미 공개한 그림을 고치면 새 파일 이름(그림은 브라우저에 하루 저장).
 주소 `/updates/<안내 id>` 로 들어오면 그 안내가 첫 화면(없는 id 면 최신). 계획과 결정 = `docs/plans/2026-11-12-update-notice-pages-plan.md`.
 - 내용 = `HiTessWorkBenchBackEnd/UpdateWeb/updates.json`(git 추적, 145 는 `git pull` 만, 재시작 불필요) + `img/`. 페이지 틀 `UpdateWeb/index.html` 은 고치지 않아도 된다.
 - 서버 `routers/updates_web.py` + `services/update_page_stats.py`, 표 `update_page_views`. 앱 대시보드 '새 기능 안내' 줄(`components/UpdateNoticeStrip.jsx`) → 앱 안 창(`UpdateNoticeModal.jsx`, iframe `?embed=1`)에서 본 기록은 사번으로 남는다(브라우저는 IP 해시라 PC 수만).

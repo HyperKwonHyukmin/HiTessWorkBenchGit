@@ -7,6 +7,7 @@
   GET  /updates                → /updates/ 로 이동(307, 그림 상대 경로 때문에)
   GET  /updates/               → index.html(공통 틀 — 내용은 updates.json 을 읽어 그린다), 첫 화면 = 최신 안내
   GET  /updates/<안내 id>      → 같은 index.html, 첫 화면 = 그 안내(없는 id 면 최신)
+                                 안내 1건 = 기능 1개(2026-11-26). 나뉜 옛 안내 주소는 formerId 로 찾아 나뉜 안내를 알린다.
   GET  /updates/updates.json   → 안내 목록(최신이 앞)
   GET  /updates/{파일}         → 그림·글꼴
   POST /updates/beacon         → 브라우저에서 본 기록(로그인 없음, IP 해시)

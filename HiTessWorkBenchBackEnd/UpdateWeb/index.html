@@ -88,6 +88,14 @@ figcaption{margin-top:8px;font-size:13.5px;color:var(--ink-muted)}
 .pager small{display:block;font-size:12.5px;color:var(--ink-muted)}
 .pager .next{margin-left:auto;text-align:right}
 .empty{padding:64px 48px;color:var(--ink-muted)}
+/* [링크 복사] — 이 안내 주소를 메일이나 메신저로 보내도록(브라우저에서 열었을 때만, 앱 안 창은 창 머리의 [복사]) */
+.share{margin-left:auto;font:inherit;font-size:13.5px;font-weight:700;color:var(--navy-2);background:var(--paper);border:1px solid var(--line);border-radius:999px;height:30px;padding:0 14px;cursor:pointer}
+.share:hover{border-color:var(--navy-2)}
+/* 기능별로 나뉜 옛 안내 주소로 들어왔을 때, 또는 없는 주소일 때의 알림 */
+.moved{margin-bottom:22px;padding:12px 16px;border:1px solid var(--line);border-radius:8px;background:var(--tag-bg);color:var(--ink);font-size:14.5px;max-width:var(--measure)}
+.moved ul{margin:8px 0 0;padding-left:20px}
+.moved button{display:block;font:inherit;background:none;border:0;padding:2px 0;color:var(--navy-2);text-decoration:underline;text-underline-offset:3px;cursor:pointer;text-align:left}
+.moved button[aria-current="true"]{font-weight:700;text-decoration:none;color:var(--ink)}
 
 .picker{display:none}
 @media (max-width:860px){
@@ -241,14 +249,49 @@ figcaption{margin-top:8px;font-size:13.5px;color:var(--ink-muted)}
     if (s.note) sec.appendChild(el('p', 'note', s.note));
     return sec;
   }
-  function renderEntry(e){
+  // 주소 복사 — 사내 브라우저(http)는 보안 연결이 아니라 navigator.clipboard 가 없을 수 있어 예전 방식으로도 시도한다
+  function copyLink(url, btn){
+    function fallback(){
+      var t = document.createElement('textarea'); t.value = url; t.setAttribute('readonly', '');
+      t.style.position = 'fixed'; t.style.opacity = '0'; document.body.appendChild(t); t.select();
+      var ok = false; try { ok = document.execCommand('copy'); } catch (err) {}
+      document.body.removeChild(t); return ok;
+    }
+    function done(ok){
+      btn.textContent = ok ? '복사했습니다' : '복사하지 못했습니다. 주소창의 주소를 쓰세요';
+      setTimeout(function(){ btn.textContent = '링크 복사'; }, ok ? 2000 : 5000);
+    }
+    if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(url).then(function(){ done(true); }, function(){ done(fallback()); });
+    else done(fallback());
+  }
+  function renderEntry(e, moved){
     var list = shown().indexOf(e) >= 0 ? shown() : entries;   // 이전·다음은 지금 고른 App 안에서
     var idx = list.indexOf(e);
     var wrap = el('div', 'doc-in'), meta = el('div', 'meta');
+    if (moved) {
+      var box = el('div', 'moved'); box.setAttribute('role', 'status');
+      if (moved.length) {
+        box.appendChild(el('p', null, '이 주소의 안내는 기능마다 한 건씩 나뉘었습니다. 같은 때 나온 안내:'));
+        var mul = el('ul');
+        moved.forEach(function(x){
+          var li = el('li'), b = el('button', null, x.title); b.type = 'button';
+          if (x.id === e.id) b.setAttribute('aria-current', 'true');
+          b.addEventListener('click', function(){ go(x.id, true); });
+          li.appendChild(b); mul.appendChild(li);
+        });
+        box.appendChild(mul);
+      } else box.appendChild(el('p', null, '찾는 안내가 없어 최신 안내를 보여 줍니다.'));
+      wrap.appendChild(box);
+    }
     if (e.app) meta.appendChild(el('span', 'tag', e.app));
     if (e.test) meta.appendChild(el('span', 'tag test', '시험용 안내'));
     meta.appendChild(el('span', 'num', fmtDay(e.date)));
     if (e.version) meta.appendChild(el('span', null, e.version));
+    if (!embed) {
+      var share = el('button', 'share', '링크 복사'); share.type = 'button'; share.setAttribute('aria-live', 'polite');
+      share.addEventListener('click', function(){ copyLink(location.origin + '/updates/' + e.id, share); });
+      meta.appendChild(share);
+    }
     wrap.appendChild(meta);
     wrap.appendChild(el('h1', null, e.title));
     if (e.summary) wrap.appendChild(el('p', 'lead', e.summary));
@@ -273,14 +316,20 @@ figcaption{margin-top:8px;font-size:13.5px;color:var(--ink-muted)}
     return secs.map(function(s){ return s.id; });
   }
   function go(id, user){
-    var e = entries.filter(function(x){ return x.id === id; })[0] || entries[0];
+    var e = entries.filter(function(x){ return x.id === id; })[0], moved = null;
+    if (!e && id) {
+      // 안내 1건 = 기능 1개로 나뉜 옛 안내의 주소(formerId) — 나뉜 안내 중 첫 안내를 보이고 나머지를 머리에 알린다
+      var parts = entries.filter(function(x){ return x.formerId === id; });
+      if (parts.length) { e = parts[0]; moved = parts; } else moved = [];   // 없는 주소 = 최신 안내 + 알림
+    }
+    e = e || entries[0];
     if (!e || (current && current.id === e.id)) return;
     // 고른 App 밖의 안내로 오면(뒤로 가기, 공유 주소) 필터를 풀어 목록과 표시를 맞춘다
     if (appFilter && shown().indexOf(e) < 0) { appFilter = ''; renderApps(); renderList(); }
     current = e;
     document.title = e.title + ' | Workbench 업데이트 안내';
     mark(e);
-    var ids = renderEntry(e);
+    var ids = renderEntry(e, moved);
     // 주소 = /updates/<안내 id>. 목록을 눌러 바꾸면 기록을 남겨 브라우저 뒤로 가기가 이전 안내로 간다.
     var url = '/updates/' + e.id + location.search;
     if (location.pathname + location.search !== url || location.hash) {

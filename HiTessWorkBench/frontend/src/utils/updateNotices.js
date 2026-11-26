@@ -13,13 +13,15 @@ function dayStart(dateText) {
 /**
  * 대시보드 줄에 보일 안내와 NEW 수.
  * test=true 안내는 개발 화면(includeTest)에서만 — 시험용 내용이 운영 사용자 대시보드에 뜨지 않게.
+ * 기능별로 나뉜 안내(formerId)는 나뉘기 전 안내를 이 PC 에서 열었으면 본 것으로 친다(2026-11-26 나눔 뒤 NEW 가 한꺼번에 뜨지 않게).
  * @returns {{ entry: object|null, newCount: number }}
  */
 export function pickStripEntry(entries, { now = Date.now(), seenIds = [], includeTest = false } = {}) {
   const seen = new Set(seenIds);
   const shown = (entries || []).filter(e => e && e.id && (includeTest || !e.test) && dayStart(e.date) !== null);
   const recent = shown.filter(e => now - dayStart(e.date) <= STRIP_WITHIN_DAYS * DAY_MS);
-  const newCount = recent.filter(e => now - dayStart(e.date) <= NEW_WITHIN_DAYS * DAY_MS && !seen.has(e.id)).length;
+  const newCount = recent.filter(e => now - dayStart(e.date) <= NEW_WITHIN_DAYS * DAY_MS
+    && !seen.has(e.id) && !(e.formerId && seen.has(e.formerId))).length;
   return { entry: recent[0] ?? null, newCount };
 }
 

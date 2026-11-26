@@ -1,4 +1,4 @@
-import React, { Fragment } from 'react';
+import React, { Fragment, useEffect } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { Copy, ExternalLink, Megaphone, X } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
@@ -14,6 +14,8 @@ import { readBeaconMessage } from '../utils/updateNotices';
 // 기록 받기는 앱 전체에 한 번만, 지우지 않는다 — 창을 닫는 순간 iframe 이 보내는 마지막 기록(읽은 시간)이
 // 리스너 해제와 엇갈려 사라지지 않게. 출처는 지금 서버 주소와 같은 것만 받는다.
 let relayInstalled = false;
+// 창 안에서 본 안내(view 기록)를 알려 줄 곳 — 대시보드 줄이 NEW 에서 빼려고 쓴다(2026-11-26, 안내를 기능별로 나눈 뒤 창 안에서 여러 안내를 넘겨 보므로).
+const viewListeners = new Set();
 function installBeaconRelay() {
   if (relayInstalled || typeof window === 'undefined') return;
   relayInstalled = true;
@@ -22,12 +24,19 @@ function installBeaconRelay() {
     try { origin = new URL(API_BASE_URL).origin; } catch { return; }
     if (event.origin !== origin) return;
     const payload = readBeaconMessage(event.data);
-    if (payload) sendUpdateBeacon(payload);
+    if (!payload) return;
+    sendUpdateBeacon(payload);
+    if (payload.type === 'view') viewListeners.forEach((fn) => { try { fn(payload.entry); } catch { /* 알림 실패는 NEW 가 남을 뿐 */ } });
   });
 }
 
-export default function UpdateNoticeModal({ isOpen, entryId, onClose }) {
+export default function UpdateNoticeModal({ isOpen, entryId, onClose, onViewed }) {
   installBeaconRelay();
+  useEffect(() => {
+    if (!isOpen || !onViewed) return undefined;
+    viewListeners.add(onViewed);
+    return () => { viewListeners.delete(onViewed); };
+  }, [isOpen, onViewed]);
   const { showToast } = useToast();
   const copyLink = async () => {
     const url = await copyUpdateLink(entryId);

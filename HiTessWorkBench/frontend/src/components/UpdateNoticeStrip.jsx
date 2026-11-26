@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { ChevronRight, Sparkles } from 'lucide-react';
 import { fetchUpdateEntries } from '../api/updates';
 import { pickStripEntry, seenStorageKey } from '../utils/updateNotices';
@@ -32,14 +32,22 @@ export default function UpdateNoticeStrip() {
     return () => controller.abort();
   }, [key]);
 
+  // 본 안내는 NEW 에서 뺀다 — 창을 연 안내와, 창 안에서 넘겨 본 안내(페이지의 view 기록)까지.
+  const markSeen = useCallback((id) => {
+    if (!id) return;
+    setSeen((prev) => {
+      if (prev.includes(id)) return prev;
+      const next = [...prev, id].slice(-200);
+      try { localStorage.setItem(key, JSON.stringify(next)); } catch { /* 저장 실패는 NEW 가 남을 뿐 */ }
+      return next;
+    });
+  }, [key]);
+
   const { entry, newCount } = pickStripEntry(entries, { seenIds: seen, includeTest: import.meta.env.DEV });
   if (!entry) return null;
 
   const open = (id) => {
-    // 연 안내는 NEW 에서 뺀다 — 목록을 열면 지금 보이는 안내를 본 것으로 친다(페이지 안에서 다른 안내를 고른 것까지는 모른다).
-    const next = Array.from(new Set([...seen, id || entry.id])).slice(-200);
-    try { localStorage.setItem(key, JSON.stringify(next)); } catch { /* 저장 실패는 NEW 가 남을 뿐 */ }
-    setSeen(next);
+    markSeen(id || entry.id);
     setOpenId(id);
     setIsOpen(true);
   };
@@ -73,7 +81,7 @@ export default function UpdateNoticeStrip() {
           <ChevronRight size={14} aria-hidden="true" />
         </button>
       </div>
-      <UpdateNoticeModal isOpen={isOpen} entryId={openId} onClose={() => setIsOpen(false)} />
+      <UpdateNoticeModal isOpen={isOpen} entryId={openId} onClose={() => setIsOpen(false)} onViewed={markSeen} />
     </>
   );
 }

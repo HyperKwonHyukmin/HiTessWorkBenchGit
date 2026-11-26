@@ -17,6 +17,17 @@ test('pickStripEntry — 시험용은 개발 화면에서만, 30일 안 최신, 
   assert.deepEqual(pickStripEntry(null, { now: NOW }), { entry: null, newCount: 0 });
 });
 
+test('pickStripEntry — 기능별로 나뉜 안내는 나뉘기 전 안내를 봤으면 NEW 가 아님', () => {
+  const parts = [
+    { id: 'b-1', date: '2026-11-12', title: '기능 1', formerId: 'b' },
+    { id: 'b-2', date: '2026-11-12', title: '기능 2', formerId: 'b' },
+    { id: 'd', date: '2026-11-18', title: '새 기능' },
+  ];
+  assert.equal(pickStripEntry(parts, { now: NOW, seenIds: ['b'] }).newCount, 1);
+  assert.equal(pickStripEntry(parts, { now: NOW }).newCount, 3);
+  assert.equal(pickStripEntry(parts, { now: NOW, seenIds: ['b-1'] }).newCount, 2);
+});
+
 test('seenStorageKey — 사번별', () => {
   assert.equal(seenStorageKey('a476854'), 'workbench:update-seen:A476854');
   assert.equal(seenStorageKey(null), 'workbench:update-seen:ANON');

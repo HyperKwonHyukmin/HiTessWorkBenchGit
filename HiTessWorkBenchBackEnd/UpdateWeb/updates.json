@@ -1,8 +1,8 @@
 {
-  "_comment": "기능 업데이트 안내(/updates) 내용. 새 안내는 entries 맨 앞에. id = YYYY-MM-DD-주제(영문 소문자·숫자·-), 주소 /updates/#<id>. app = 화면에 보일 앱 이름, programs = App 분류(그 App 의 Analysis.program_name 목록, User Management 'App 사용자' 필터와 같은 키) — 통계가 그 App 을 한 번이라도 실행한 사람 가운데 누가 봤는지를 센다, 없으면 생략. sections[].id = 측정 구획(영문 소문자로 시작). 구획 글은 body(문단 목록)·facts([{label,text}] — 무엇이 바뀌었나/어디서 보나/영향을 같은 자리에)·steps(순서)·points(점 목록)·image{src,alt,caption} 또는 images[…]·note(주의 한 줄) 중 필요한 것만. test=true 면 '시험용 안내' 표시. 사용 방법이 바뀌는 기능만 안내한다(작은 수정은 changelog.json 에만).",
+  "_comment": "기능 업데이트 안내(/updates) 내용. 안내 1건 = 기능 1개(2026-11-26, LogBook 처럼 기능마다 주소 하나 — 사용자에게 그 기능 주소만 보낸다). 같은 날 같은 App 의 기능이 여럿이면 안내도 여럿. 새 안내는 entries 맨 앞에. id = YYYY-MM-DD-주제(영문 소문자, 숫자, -), 주소 /updates/<id>. app = 화면에 보일 앱 이름, programs = App 분류(그 App 의 Analysis.program_name 목록, User Management 'App 사용자' 필터와 같은 키) — 통계가 그 App 을 한 번이라도 실행한 사람 가운데 누가 봤는지를 센다, 없으면 생략. formerId = 이 안내가 나뉘기 전 옛 안내 id(옛 주소로 들어오면 나뉜 안내를 알린다, 새 안내에는 쓰지 않는다). sections[].id = 측정 구획(영문 소문자로 시작) — 기본은 change(바뀐 점: facts 표 = 무엇이 바뀌었나/어디서 보나/결과에 미치는 영향) + 필요하면 how(쓰는 법: steps). 구획 글은 body(문단 목록), facts([{label,text}]), steps(순서), points(점 목록), image{src,alt,caption} 또는 images[…], note(주의 한 줄) 중 필요한 것만. 이미 공개한 그림을 고치면 새 파일 이름으로(그림은 브라우저에 하루 저장된다). test=true 면 '시험용 안내' 표시. 사용 방법이 바뀌는 기능만 안내한다(작은 수정은 changelog.json 에만).",
   "entries": [
     {
-      "id": "2026-11-26-mb-crossing-review-place",
+      "id": "2026-11-26-mb-member-crossing",
       "date": "2026-11-26",
       "app": "HiTESS Model Builder",
       "programs": [
@@ -11,13 +11,14 @@
         "AmToModelBuilder",
         "HiTESS Model Builder"
       ],
-      "version": "Model Builder Studio 0.1.18, 모델 생성 엔진 2026-11-26",
-      "title": "Model Builder 교차 부재 연결, Review 자리별 확대, 승인 항목 정리",
-      "summary": "엇갈려 겹친 구조 부재를 교차점에서 바로 잇고, Review 탭에서 항목을 누르면 그 자리 크기에 맞춰 확대합니다. 질량점 승인 기준을 좁혀 승인할 항목이 줄었고, 배관 축에서 조금 어긋난 U-bolt 도 배관을 받치게 했습니다.",
+      "version": "모델 생성 엔진 2026-11-25",
+      "title": "엇갈려 겹친 부재를 교차점에서 연결",
+      "summary": "두 구조 부재가 몇 mm 어긋난 채 엇갈리면, 이제 부재 끝이 아니라 두 부재가 가장 가까운 점에서 짧은 RBE 로 잇습니다.",
+      "formerId": "2026-11-26-mb-crossing-review-place",
       "sections": [
         {
-          "id": "crossing",
-          "heading": "1. 엇갈려 겹친 부재를 교차점에서 연결",
+          "id": "change",
+          "heading": "바뀐 점",
           "facts": [
             {
               "label": "무엇이 바뀌었나",
@@ -32,16 +33,35 @@
               "text": "엉뚱하게 먼 곳에 건 연결이 줄어 하중 경로가 실제에 가까워지고, Review 탭의 '추정 연결' 승인 항목도 줄어듭니다(샘플 모델 9건에서 2건)."
             }
           ],
-          "image": {
-            "src": "img/mb-member-crossing.png",
-            "alt": "엇갈린 두 구조 부재(파랑)를 교차점에서 짧은 RBE(분홍)로 이은 3D 화면",
-            "caption": "① 교차점에서 이은 짧은 RBE (Model Builder Studio 3D)"
-          },
+          "images": [
+            {
+              "src": "img/mb-member-crossing.png",
+              "alt": "엇갈린 두 구조 부재(파랑)를 교차점에서 짧은 RBE(분홍)로 이은 3D 화면",
+              "caption": "① 교차점에서 이은 짧은 RBE (Model Builder Studio 3D)"
+            }
+          ],
           "note": "서버의 모델 생성 엔진을 바꾼 뒤 새로 만든 모델부터 적용됩니다. 이미 만든 모델은 다시 만들어야 바뀝니다."
-        },
+        }
+      ]
+    },
+    {
+      "id": "2026-11-26-mb-review-place",
+      "date": "2026-11-26",
+      "app": "HiTESS Model Builder",
+      "programs": [
+        "HiTessModelBuilder",
+        "ModelBuilderAnalysis",
+        "AmToModelBuilder",
+        "HiTESS Model Builder"
+      ],
+      "version": "Model Builder Studio 0.1.18",
+      "title": "Review 항목을 자리마다 확대",
+      "summary": "Review 탭에서 항목을 누르면 3D 가 그 자리 크기에 맞춰 확대하고, 자리가 여럿인 항목은 자리마다 넘겨 봅니다.",
+      "formerId": "2026-11-26-mb-crossing-review-place",
+      "sections": [
         {
-          "id": "reviewplace",
-          "heading": "2. Review 항목을 자리마다 확대",
+          "id": "change",
+          "heading": "바뀐 점",
           "facts": [
             {
               "label": "무엇이 바뀌었나",
@@ -55,7 +75,11 @@
               "label": "결과에 미치는 영향",
               "text": "보는 방법만 바뀌었습니다. 승인과 거절은 예전처럼 항목 단위로 합니다."
             }
-          ],
+          ]
+        },
+        {
+          "id": "how",
+          "heading": "쓰는 법",
           "steps": [
             "Review 탭 목록에서 항목을 누르거나 [다음 남은 항목]을 누릅니다. 3D 가 첫 자리로 확대합니다.",
             "카드의 화살표(그림 ①)로 다음 자리로 넘기며 3D(그림 ②)에서 실제로 붙는 자리인지 봅니다.",
@@ -73,10 +97,27 @@
               "caption": "② 그 자리 크기로 확대된 3D"
             }
           ]
-        },
+        }
+      ]
+    },
+    {
+      "id": "2026-11-26-mb-mass-approval",
+      "date": "2026-11-26",
+      "app": "HiTESS Model Builder",
+      "programs": [
+        "HiTessModelBuilder",
+        "ModelBuilderAnalysis",
+        "AmToModelBuilder",
+        "HiTESS Model Builder"
+      ],
+      "version": "모델 생성 엔진 2026-11-26",
+      "title": "질량점 승인 기준을 좁힘",
+      "summary": "무게중심이 바뀌거나 큰 질량을 멀리 붙인 경우만 승인을 요청해, 승인할 질량점 항목이 크게 줄었습니다.",
+      "formerId": "2026-11-26-mb-crossing-review-place",
+      "sections": [
         {
-          "id": "massrule",
-          "heading": "3. 질량점 승인 기준을 좁힘",
+          "id": "change",
+          "heading": "바뀐 점",
           "facts": [
             {
               "label": "무엇이 바뀌었나",
@@ -92,10 +133,27 @@
             }
           ],
           "note": "서버의 모델 생성 엔진을 바꾼 뒤 새로 만든 모델부터 적용됩니다. 이미 만든 모델은 다시 만들어야 바뀝니다."
-        },
+        }
+      ]
+    },
+    {
+      "id": "2026-11-26-mb-ubolt-pipe",
+      "date": "2026-11-26",
+      "app": "HiTESS Model Builder",
+      "programs": [
+        "HiTessModelBuilder",
+        "ModelBuilderAnalysis",
+        "AmToModelBuilder",
+        "HiTESS Model Builder"
+      ],
+      "version": "모델 생성 엔진 2026-11-26",
+      "title": "배관 축에서 조금 어긋난 U-bolt 도 배관을 받침",
+      "summary": "U-bolt 좌표가 배관 중심선에서 조금 어긋나도, U-bolt 점이 배관 몸통 안에 있으면 그 배관을 받칩니다.",
+      "formerId": "2026-11-26-mb-crossing-review-place",
+      "sections": [
         {
-          "id": "ubolt",
-          "heading": "4. 배관 축에서 조금 어긋난 U-bolt 도 배관을 받침",
+          "id": "change",
+          "heading": "바뀐 점",
           "facts": [
             {
               "label": "무엇이 바뀌었나",
@@ -115,7 +173,7 @@
       ]
     },
     {
-      "id": "2026-11-26-mu-member-split-hoist",
+      "id": "2026-11-26-mu-member-split",
       "date": "2026-11-26",
       "app": "Group & Module Unit 권상 구조 해석",
       "programs": [
@@ -123,12 +181,13 @@
         "Group & Module Unit 권상 구조 해석"
       ],
       "version": "Module Unit Studio 0.0.227",
-      "title": "Module Unit Studio 부재 위 권상점(부재 나누기), 권상 후보 표시, 해석 보고서 개선",
-      "summary": "부재 중간에 노드를 만들면 그 부재를 나눠 구조에 잇습니다. 부재와 이어지지 않은 권상점은 경고합니다. 권상 후보 표시를 작게 바꾸고 안내 글은 켜고 끌 수 있게 했으며, 고른 권상 방식을 기억합니다. 해석 보고서는 호선과 Unit 을 자동으로 채우고 그림을 다듬었습니다.",
+      "title": "부재 위에 권상점 만들기(부재 나누기)",
+      "summary": "부재 선 위에 노드를 만들면 그 부재를 새 노드에서 둘로 나눠 구조에 잇습니다. 부재 중간을 권상점으로 쓸 수 있습니다.",
+      "formerId": "2026-11-26-mu-member-split-hoist",
       "sections": [
         {
-          "id": "split",
-          "heading": "1. 부재 위에 권상점 만들기(부재 나누기)",
+          "id": "change",
+          "heading": "바뀐 점",
           "facts": [
             {
               "label": "무엇이 바뀌었나",
@@ -142,22 +201,43 @@
               "label": "결과에 미치는 영향",
               "text": "나눈 두 부재는 원래 부재의 단면과 방향을 그대로 씁니다. 실제 모델로 해석해 보니 부재 중간의 권상점이 74 mm 옆 원래 끝 노드와 같은 크기(차이 0.3%)의 힘을 받았습니다."
             }
-          ],
+          ]
+        },
+        {
+          "id": "how",
+          "heading": "쓰는 법",
           "steps": [
             "Edit 탭에서 부재 양 끝 노드 두 개를 고르고 노드 > 새로 만들기를 엽니다. '두 노드의 중점'(그림 ①)을 누릅니다.",
             "'부재 E… 를 이 노드에서 나누기'(그림 ②)가 켜져 있는지 봅니다.",
             "[노드 만들기](그림 ③). 되돌리기는 Ctrl+Z 한 번(노드와 부재 나누기를 함께 되돌림).",
             "Hoist 탭에서 만든 노드를 Shift+클릭해 권상점으로 지정합니다."
           ],
-          "image": {
-            "src": "img/mu-node-split.png",
-            "alt": "노드 만들기 패널의 두 노드의 중점 단추, 부재 나누기 체크, 노드 만들기 단추",
-            "caption": "① 두 노드의 중점 ② 부재 나누기 체크 ③ 노드 만들기"
-          }
-        },
+          "images": [
+            {
+              "src": "img/mu-node-split.png",
+              "alt": "노드 만들기 패널의 두 노드의 중점 단추, 부재 나누기 체크, 노드 만들기 단추",
+              "caption": "① 두 노드의 중점 ② 부재 나누기 체크 ③ 노드 만들기"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "2026-11-26-mu-unbound-hoist",
+      "date": "2026-11-26",
+      "app": "Group & Module Unit 권상 구조 해석",
+      "programs": [
+        "GroupModuleUnit",
+        "Group & Module Unit 권상 구조 해석"
+      ],
+      "version": "Module Unit Studio 0.0.227",
+      "title": "부재와 이어지지 않은 권상점 경고, Wire 결과 누락 고침",
+      "summary": "부재와 RBE 어디에도 이어지지 않은 노드를 권상점으로 고르면 알려 줍니다. 힘이 0 인 Wire 와 그 옆 Wire 가 누락으로 보이던 결과 표도 고쳤습니다.",
+      "formerId": "2026-11-26-mu-member-split-hoist",
+      "sections": [
         {
-          "id": "unbound",
-          "heading": "2. 부재와 이어지지 않은 권상점 경고, Wire 결과 누락 고침",
+          "id": "change",
+          "heading": "바뀐 점",
           "facts": [
             {
               "label": "무엇이 바뀌었나",
@@ -172,16 +252,33 @@
               "text": "그런 슬링은 힘이 0 이라 결과가 틀어집니다. 함께 고친 것: 구조 해석 결과 표에서 힘이 정확히 0 인 Wire 와, 결과 파일의 같은 줄에 찍힌 옆 번호 Wire 가 '누락'으로 보이던 문제. 이제 0 N 과 실제 값으로 나옵니다."
             }
           ],
-          "image": {
-            "src": "img/mu-unbound-hoist-warning.png",
-            "alt": "Hoist 탭 그룹 1의 권상점 N2899 와 STEP 4 위의 빨간 경고 상자",
-            "caption": "① 연결 없는 권상점 ② 경고 상자"
-          },
+          "images": [
+            {
+              "src": "img/mu-unbound-hoist-warning.png",
+              "alt": "Hoist 탭 그룹 1의 권상점 N2899 와 STEP 4 위의 빨간 경고 상자",
+              "caption": "① 연결 없는 권상점 ② 경고 상자"
+            }
+          ],
           "note": "Wire 결과 표시 수정은 서버 업데이트 뒤 새로 푼 해석부터 적용됩니다."
-        },
+        }
+      ]
+    },
+    {
+      "id": "2026-11-26-mu-hoist-candidate",
+      "date": "2026-11-26",
+      "app": "Group & Module Unit 권상 구조 해석",
+      "programs": [
+        "GroupModuleUnit",
+        "Group & Module Unit 권상 구조 해석"
+      ],
+      "version": "Module Unit Studio 0.0.226",
+      "title": "권상 후보 표시 작게, 안내 글 켜고 끄기, 권상 방식 기억",
+      "summary": "추천 후보 구가 다른 노드를 가리지 않게 작아지고, 3D 안내 글은 켜고 끌 수 있습니다. 마지막에 고른 권상 방식은 다음에 열어도 그대로입니다.",
+      "formerId": "2026-11-26-mu-member-split-hoist",
+      "sections": [
         {
-          "id": "candidate",
-          "heading": "3. 권상 후보 표시 작게, 안내 글 켜고 끄기, 권상 방식 기억",
+          "id": "change",
+          "heading": "바뀐 점",
           "facts": [
             {
               "label": "무엇이 바뀌었나",
@@ -208,10 +305,25 @@
               "caption": "③ 작아진 후보 구"
             }
           ]
-        },
+        }
+      ]
+    },
+    {
+      "id": "2026-11-26-mu-report",
+      "date": "2026-11-26",
+      "app": "Group & Module Unit 권상 구조 해석",
+      "programs": [
+        "GroupModuleUnit",
+        "Group & Module Unit 권상 구조 해석"
+      ],
+      "version": "Module Unit Studio 0.0.226",
+      "title": "해석 보고서: 호선과 Unit 자동 입력, 파일 이름, 그림",
+      "summary": "보고서 창이 호선과 Unit 을 파일 이름에서 채우고, 보고서 파일 이름이 깨지지 않으며, 응력과 변위와 COG 그림을 읽기 쉽게 다듬었습니다.",
+      "formerId": "2026-11-26-mu-member-split-hoist",
+      "sections": [
         {
-          "id": "report",
-          "heading": "4. 해석 보고서: 호선과 Unit 자동 입력, 파일 이름, 그림",
+          "id": "change",
+          "heading": "바뀐 점",
           "facts": [
             {
               "label": "무엇이 바뀌었나",
@@ -248,7 +360,7 @@
       ]
     },
     {
-      "id": "2026-11-19-mu-eval-mode-rbe-swap",
+      "id": "2026-11-19-mu-eval-mode",
       "date": "2026-11-19",
       "app": "Group & Module Unit 권상 구조 해석",
       "programs": [
@@ -256,12 +368,13 @@
         "Group & Module Unit 권상 구조 해석"
       ],
       "version": "Module Unit Studio 0.0.225",
-      "title": "Module Unit Studio 평가 모드 3단계와 RBE 독립 종속 바꾸기",
-      "summary": "자세안정성 평가 방식을 Strict, Standard, Advisory 세 가지 중에서 고릅니다. 독립 노드와 종속 노드가 하나씩인 RBE 는 두 노드를 서로 바꿀 수 있고, 연결 그룹은 체크해서 한 번에 지울 수 있습니다.",
+      "title": "자세안정성 평가 모드 3단계",
+      "summary": "자세안정성 평가를 Strict, Standard, Advisory 세 모드 중에서 고릅니다. Advisory 는 자세안정성이 FAIL 이어도 구조 해석까지 진행합니다.",
+      "formerId": "2026-11-19-mu-eval-mode-rbe-swap",
       "sections": [
         {
-          "id": "evalmode",
-          "heading": "1. 자세안정성 평가 모드 3단계",
+          "id": "change",
+          "heading": "바뀐 점",
           "facts": [
             {
               "label": "무엇이 바뀌었나",
@@ -280,16 +393,33 @@
               "text": "한 번 고른 모드는 다음에 Studio 를 열어도 그대로 유지. Advisory 일 때는 패널에 안내 줄이 늘 보임."
             }
           ],
-          "image": {
-            "src": "img/mu-eval-mode.png",
-            "alt": "Hoist 탭의 평가 모드 단추 세 개(Strict, Standard, Advisory)와 모드 설명 말풍선",
-            "caption": "① 평가 모드 단추 ② 마우스를 올리면 나오는 모드별 설명"
-          },
+          "images": [
+            {
+              "src": "img/mu-eval-mode.png",
+              "alt": "Hoist 탭의 평가 모드 단추 세 개(Strict, Standard, Advisory)와 모드 설명 말풍선",
+              "caption": "① 평가 모드 단추 ② 마우스를 올리면 나오는 모드별 설명"
+            }
+          ],
           "note": "Advisory 결과를 WorkBench 판정과 보고서에 '자세안정성 미충족' 으로 표시하는 기능은 다음 서버 업데이트에 함께 적용됩니다."
-        },
+        }
+      ]
+    },
+    {
+      "id": "2026-11-19-mu-rbe-swap",
+      "date": "2026-11-19",
+      "app": "Group & Module Unit 권상 구조 해석",
+      "programs": [
+        "GroupModuleUnit",
+        "Group & Module Unit 권상 구조 해석"
+      ],
+      "version": "Module Unit Studio 0.0.225",
+      "title": "RBE 독립 종속 바꾸기",
+      "summary": "독립 노드와 종속 노드가 하나씩인 RBE 의 두 노드를 서로 바꿉니다. 여러 RBE 를 한 번에 바꿀 수 있습니다.",
+      "formerId": "2026-11-19-mu-eval-mode-rbe-swap",
+      "sections": [
         {
-          "id": "rbeswap",
-          "heading": "2. RBE 독립 종속 바꾸기",
+          "id": "change",
+          "heading": "바뀐 점",
           "facts": [
             {
               "label": "무엇이 바뀌었나",
@@ -303,7 +433,11 @@
               "label": "결과에 미치는 영향",
               "text": "6자유도(cm 123456) RBE 는 바꿔도 해석 결과가 같음. 일부 자유도만 묶는 RBE 는 두 노드가 떨어져 있으면 결과가 조금 달라질 수 있어 목록에 노란 삼각형 주의 표시. 한 노드가 두 RBE 의 종속이 되는 경우는 바꿀 수 없게 막음."
             }
-          ],
+          ]
+        },
+        {
+          "id": "how",
+          "heading": "쓰는 법",
           "steps": [
             "Edit 탭 도구 막대 RBE 에서 '독립 · 종속 바꾸기' 를 누름. 바꿀 수 있는 RBE 가 3D 에서 파랑으로 보임.",
             "3D 의 파란 RBE 를 클릭하거나 목록에서 체크(그림 ①). 여러 개는 '모두 고르기'(그림 ②). 오른쪽 클릭은 고르기에서 빼기.",
@@ -322,10 +456,25 @@
               "caption": "③ 고른 RBE 의 바뀐 뒤 모습(초록 선, 주황 점이 새 독립 노드)"
             }
           ]
-        },
+        }
+      ]
+    },
+    {
+      "id": "2026-11-19-mu-group-bulk-delete",
+      "date": "2026-11-19",
+      "app": "Group & Module Unit 권상 구조 해석",
+      "programs": [
+        "GroupModuleUnit",
+        "Group & Module Unit 권상 구조 해석"
+      ],
+      "version": "Module Unit Studio 0.0.225",
+      "title": "연결 그룹 한 번에 지우기",
+      "summary": "Edit 탭에서 여러 연결 그룹을 체크해 한 번에 지웁니다. Model Builder Studio 와 같은 사용법입니다.",
+      "formerId": "2026-11-19-mu-eval-mode-rbe-swap",
+      "sections": [
         {
-          "id": "groupbulk",
-          "heading": "3. 연결 그룹 한 번에 지우기",
+          "id": "change",
+          "heading": "바뀐 점",
           "facts": [
             {
               "label": "무엇이 바뀌었나",
@@ -340,16 +489,18 @@
               "text": "'전체 선택' 은 그룹 1(본 구조)을 빼고 고름. 지우기 전에 확인 창이 지울 요소와 노드 수를 보여 주고, Ctrl+Z 한 번으로 모두 되돌림."
             }
           ],
-          "image": {
-            "src": "img/studio-group-bulk-delete.png",
-            "alt": "Edit 탭 그룹 목록의 체크박스와 전체 선택, 선택 해제, 선택한 그룹 삭제 단추",
-            "caption": "① 그룹 체크박스 ② 전체 선택, 선택 해제 ③ 선택한 그룹 삭제 (그림은 Model Builder Studio 화면, Module Unit Studio 도 같은 자리)"
-          }
+          "images": [
+            {
+              "src": "img/studio-group-bulk-delete.png",
+              "alt": "Edit 탭 그룹 목록의 체크박스와 전체 선택, 선택 해제, 선택한 그룹 삭제 단추",
+              "caption": "① 그룹 체크박스 ② 전체 선택, 선택 해제 ③ 선택한 그룹 삭제 (그림은 Model Builder Studio 화면, Module Unit Studio 도 같은 자리)"
+            }
+          ]
         }
       ]
     },
     {
-      "id": "2026-11-19-mb-group-bulk-mass-info",
+      "id": "2026-11-19-mb-group-bulk-delete",
       "date": "2026-11-19",
       "app": "HiTESS Model Builder",
       "programs": [
@@ -359,12 +510,13 @@
         "HiTESS Model Builder"
       ],
       "version": "Model Builder Studio 0.1.15",
-      "title": "Model Builder Studio 그룹 한 번에 지우기와 질량 정보 바로 보기",
-      "summary": "Edit 탭에서 여러 연결 그룹을 체크해 한 번에 지웁니다. 질량을 고르면 오른쪽 '정보' 탭에 바로 보이고, 화면을 옮길 때 대상이 작업 패널에 가리지 않습니다. Module Unit Studio 와 같은 사용법입니다.",
+      "title": "연결 그룹 한 번에 지우기",
+      "summary": "Edit 탭에서 여러 연결 그룹을 체크해 한 번에 지웁니다. Module Unit Studio 와 같은 사용법입니다.",
+      "formerId": "2026-11-19-mb-group-bulk-mass-info",
       "sections": [
         {
-          "id": "groupbulk",
-          "heading": "1. 연결 그룹 한 번에 지우기",
+          "id": "change",
+          "heading": "바뀐 점",
           "facts": [
             {
               "label": "무엇이 바뀌었나",
@@ -379,15 +531,34 @@
               "text": "'전체 선택' 은 그룹 1(본 구조)을 빼고 고름. 확인 창을 거치고, 그 그룹 노드를 쓰던 추가 RBE 와 부재도 예전처럼 함께 지워짐. Ctrl+Z 한 번으로 모두 되돌림."
             }
           ],
-          "image": {
-            "src": "img/studio-group-bulk-delete.png",
-            "alt": "Edit 탭 그룹 목록의 체크박스와 전체 선택, 선택 해제, 선택한 그룹 삭제 단추",
-            "caption": "① 그룹 체크박스 ② 전체 선택, 선택 해제 ③ 선택한 그룹 삭제"
-          }
-        },
+          "images": [
+            {
+              "src": "img/studio-group-bulk-delete.png",
+              "alt": "Edit 탭 그룹 목록의 체크박스와 전체 선택, 선택 해제, 선택한 그룹 삭제 단추",
+              "caption": "① 그룹 체크박스 ② 전체 선택, 선택 해제 ③ 선택한 그룹 삭제"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "2026-11-19-mb-mass-info",
+      "date": "2026-11-19",
+      "app": "HiTESS Model Builder",
+      "programs": [
+        "HiTessModelBuilder",
+        "ModelBuilderAnalysis",
+        "AmToModelBuilder",
+        "HiTESS Model Builder"
+      ],
+      "version": "Model Builder Studio 0.1.15",
+      "title": "질량을 '정보' 탭에서 바로 보기",
+      "summary": "질량점이나 질량이 걸린 노드를 고르면 오른쪽 '정보' 탭에 질량 값이 바로 보입니다.",
+      "formerId": "2026-11-19-mb-group-bulk-mass-info",
+      "sections": [
         {
-          "id": "massinfo",
-          "heading": "2. 질량을 '정보' 탭에서 바로 보기",
+          "id": "change",
+          "heading": "바뀐 점",
           "facts": [
             {
               "label": "무엇이 바뀌었나",
@@ -402,10 +573,27 @@
               "text": "화면 표시만 바뀜. 질량이 없는 노드나 부재를 고를 때는 예전처럼 '표시' 탭을 그대로 두고 '정보' 단추에 점만 띄움."
             }
           ]
-        },
+        }
+      ]
+    },
+    {
+      "id": "2026-11-19-mb-panel-clear",
+      "date": "2026-11-19",
+      "app": "HiTESS Model Builder",
+      "programs": [
+        "HiTessModelBuilder",
+        "ModelBuilderAnalysis",
+        "AmToModelBuilder",
+        "HiTESS Model Builder"
+      ],
+      "version": "Model Builder Studio 0.1.15",
+      "title": "화면을 옮길 때 작업 패널을 비켜 놓기",
+      "summary": "[보기]나 찾기로 화면을 옮길 때, 대상을 아래쪽 작업 패널에 가리지 않는 자리에 놓습니다.",
+      "formerId": "2026-11-19-mb-group-bulk-mass-info",
+      "sections": [
         {
-          "id": "panelclear",
-          "heading": "3. 화면을 옮길 때 작업 패널을 비켜 놓기",
+          "id": "change",
+          "heading": "바뀐 점",
           "facts": [
             {
               "label": "무엇이 바뀌었나",
@@ -505,7 +693,7 @@
       ]
     },
     {
-      "id": "2026-11-16-mf-field-requests",
+      "id": "2026-11-16-mf-corrosion",
       "date": "2026-11-16",
       "app": "Mooring Fitting Assessment",
       "programs": [
@@ -514,12 +702,13 @@
         "Mooring Fitting Assessment"
       ],
       "version": "Studio 0.1.99",
-      "title": "Mooring Fitting 현업 요청 5건 반영, Studio 안 사용 설명서",
-      "summary": "현업에서 요청한 다섯 가지를 반영하고, Studio 안에서 바로 여는 사용 설명서를 넣었습니다. 아래 항목마다 무엇이 바뀌었는지, 화면 어디에서 보는지, 해석 결과에 어떤 영향이 있는지를 적었습니다.",
+      "title": "부식 마진을 판 두께에서 뺍니다",
+      "summary": "구조 CSV 의 부식 마진만큼 얇게 만든 두께(순두께)로 해석하고 판정합니다.",
+      "formerId": "2026-11-16-mf-field-requests",
       "sections": [
         {
-          "id": "corrosion",
-          "heading": "1. 부식 마진을 판 두께에서 뺍니다",
+          "id": "change",
+          "heading": "바뀐 점",
           "facts": [
             {
               "label": "무엇이 바뀌었나",
@@ -542,16 +731,34 @@
               "text": "두께가 얇아지므로 같은 하중에서 응력과 Usage 가 예전보다 커집니다."
             }
           ],
-          "image": {
-            "src": "img/mf-corrosion-chip.png",
-            "alt": "Studio 오른쪽 위, '해석 전' 칩 왼쪽에 있는 '부식 마진 2 mm' 칩을 주황 상자로 표시한 그림",
-            "caption": "Studio 오른쪽 위: '부식 마진 2 mm' 칩이 이 모델에 적용한 값입니다."
-          },
+          "images": [
+            {
+              "src": "img/mf-corrosion-chip.png",
+              "alt": "Studio 오른쪽 위, '해석 전' 칩 왼쪽에 있는 '부식 마진 2 mm' 칩을 주황 상자로 표시한 그림",
+              "caption": "Studio 오른쪽 위: '부식 마진 2 mm' 칩이 이 모델에 적용한 값입니다."
+            }
+          ],
           "note": "CSV 값을 그대로 씁니다. IACS 최소값 2.0 mm 보다 작으면 경고만 띄우고 해석은 진행합니다."
-        },
+        }
+      ]
+    },
+    {
+      "id": "2026-11-16-mf-faceplate",
+      "date": "2026-11-16",
+      "app": "Mooring Fitting Assessment",
+      "programs": [
+        "MooringFitting",
+        "MooringFittingSolve",
+        "Mooring Fitting Assessment"
+      ],
+      "version": "Studio 0.1.99",
+      "title": "면재(Face Plate)가 빠져 보이던 부재",
+      "summary": "문의하신 부재에 면재가 없던 원인과 고칠 곳(입력 CSV)을 정리했습니다.",
+      "formerId": "2026-11-16-mf-field-requests",
+      "sections": [
         {
-          "id": "faceplate",
-          "heading": "2. 면재(Face Plate)가 빠져 보이던 부재",
+          "id": "change",
+          "heading": "원인과 고칠 곳",
           "facts": [
             {
               "label": "원인",
@@ -570,15 +777,33 @@
               "text": "Studio 단면 그림에서 갑판이 잘 안 보여 평강 하나처럼 보이던 점을 고쳤습니다."
             }
           ],
-          "image": {
-            "src": "img/mf-faceplate.png",
-            "alt": "왼쪽은 갑판 아래 평강만 있고 면재 자리가 점선인 단면, 오른쪽은 갑판, 평강, 면재 150x20 으로 된 T 단면",
-            "caption": "왼쪽: 지금 들어온 CSV(면재 없음). 오른쪽: TBAR 행으로 들어왔을 때."
-          }
-        },
+          "images": [
+            {
+              "src": "img/mf-faceplate.png",
+              "alt": "왼쪽은 갑판 아래 평강만 있고 면재 자리가 점선인 단면, 오른쪽은 갑판, 평강, 면재 150x20 으로 된 T 단면",
+              "caption": "왼쪽: 지금 들어온 CSV(면재 없음). 오른쪽: TBAR 행으로 들어왔을 때."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "2026-11-16-mf-member-label",
+      "date": "2026-11-16",
+      "app": "Mooring Fitting Assessment",
+      "programs": [
+        "MooringFitting",
+        "MooringFittingSolve",
+        "Mooring Fitting Assessment"
+      ],
+      "version": "Studio 0.1.99",
+      "title": "부재 이름을 구조도 표기로 바꿨습니다",
+      "summary": "보고서와 Studio 의 부재 이름을 해석용 이름 대신 구조도에 쓰는 이름(예: 150x90x12 UA)으로 적습니다.",
+      "formerId": "2026-11-16-mf-field-requests",
+      "sections": [
         {
-          "id": "label",
-          "heading": "3. 부재 이름을 구조도 표기로 바꿨습니다",
+          "id": "change",
+          "heading": "바뀐 점",
           "facts": [
             {
               "label": "무엇이 바뀌었나",
@@ -598,10 +823,26 @@
             "TBAR → 200x12+100x10 (T)",
             "FLATBAR, PLATE → 600x11 FB"
           ]
-        },
+        }
+      ]
+    },
+    {
+      "id": "2026-11-16-mf-load-scope",
+      "date": "2026-11-16",
+      "app": "Mooring Fitting Assessment",
+      "programs": [
+        "MooringFitting",
+        "MooringFittingSolve",
+        "Mooring Fitting Assessment"
+      ],
+      "version": "Studio 0.1.99",
+      "title": "MF 하중과 Winch 하중을 따로 해석할 수 있습니다",
+      "summary": "해석할 하중을 전체, MF 만, Winch 만 중에서 골라 실행합니다.",
+      "formerId": "2026-11-16-mf-field-requests",
+      "sections": [
         {
-          "id": "scope",
-          "heading": "4. MF 하중과 Winch 하중을 따로 해석할 수 있습니다",
+          "id": "change",
+          "heading": "바뀐 점",
           "facts": [
             {
               "label": "어디서 고르나",
@@ -621,10 +862,26 @@
             }
           ],
           "note": "고른 범위에 하중이 하나도 없으면 실행하지 않고 알려 줍니다."
-        },
+        }
+      ]
+    },
+    {
+      "id": "2026-11-16-mf-member-split-add",
+      "date": "2026-11-16",
+      "app": "Mooring Fitting Assessment",
+      "programs": [
+        "MooringFitting",
+        "MooringFittingSolve",
+        "Mooring Fitting Assessment"
+      ],
+      "version": "Studio 0.1.99",
+      "title": "기존 부재를 나누고, 새 부재를 넣을 수 있습니다",
+      "summary": "Studio Edit 탭에서 부재를 나누거나 두 노드를 잇는 새 부재를 넣고, 그대로 해석합니다.",
+      "formerId": "2026-11-16-mf-field-requests",
+      "sections": [
         {
-          "id": "split",
-          "heading": "5. 기존 부재를 나누고, 새 부재를 넣을 수 있습니다",
+          "id": "change",
+          "heading": "바뀐 점",
           "facts": [
             {
               "label": "어디서 하나",
@@ -638,7 +895,11 @@
               "label": "되돌리기",
               "text": "Ctrl+Z, 또는 왼쪽 '수정 내역' 줄의 × 로 지웁니다."
             }
-          ],
+          ]
+        },
+        {
+          "id": "how",
+          "heading": "쓰는 법",
           "steps": [
             "그림 ① '부재 분할' 을 열고 3D 에서 나눌 부재를 누릅니다. 나눌 위치는 비율(0~1), 시작 노드에서 잰 거리(mm), 고른 노드에서 내린 수선의 발 중 하나로 정합니다. 두 조각은 원래 부재의 단면과 등급을 그대로 따르고, 나눈 자리에 새 노드가 생깁니다.",
             "그림 ② '부재 추가' 를 엽니다.",
@@ -646,20 +907,38 @@
             "그림 ④ 새 부재의 단면을 정합니다. [참조 부재 누르기] 는 같은 단면의 기존 부재를 3D 에서 누르는 방법이고, [단면 목록에서 찾기] 는 목록에서 고르는 방법입니다. 새 부재는 참조 부재의 단면, 방향, 등급을 따릅니다.",
             "그림 ⑤ [부재 추가] 를 누르면 3D 에 바로 나타납니다."
           ],
-          "image": {
-            "src": "img/mf-split-add-guide.png",
-            "alt": "Studio Edit 탭: 왼쪽 도구 막대의 부재 분할(1)과 부재 추가(2), 3D 에서 고른 두 노드와 새 부재 E900008(3), 단면 고르기 단추(4), 부재 추가 단추(5)",
-            "caption": "번호는 위 순서와 같습니다."
-          },
+          "images": [
+            {
+              "src": "img/mf-split-add-guide.png",
+              "alt": "Studio Edit 탭: 왼쪽 도구 막대의 부재 분할(1)과 부재 추가(2), 3D 에서 고른 두 노드와 새 부재 E900008(3), 단면 고르기 단추(4), 부재 추가 단추(5)",
+              "caption": "번호는 위 순서와 같습니다."
+            }
+          ],
           "note": "나누거나 넣은 부재는 구조 CSV 로 내보내지지 않습니다. 같은 모델을 다시 만들 때는 CSV 를 고치거나 수정 내역을 저장해 두었다가 불러오세요."
-        },
+        }
+      ]
+    },
+    {
+      "id": "2026-11-16-mf-manual",
+      "date": "2026-11-16",
+      "app": "Mooring Fitting Assessment",
+      "programs": [
+        "MooringFitting",
+        "MooringFittingSolve",
+        "Mooring Fitting Assessment"
+      ],
+      "version": "Studio 0.1.99",
+      "title": "Studio 안에서 사용 설명서를 엽니다",
+      "summary": "Mooring Fitting Studio 에서 사용 설명서를 3D 화면 옆에 열어, 읽으면서 그대로 따라 합니다.",
+      "formerId": "2026-11-16-mf-field-requests",
+      "sections": [
         {
-          "id": "manual",
-          "heading": "6. Studio 안에서 사용 설명서를 엽니다",
+          "id": "change",
+          "heading": "바뀐 점",
           "facts": [
             {
               "label": "무엇이 바뀌었나",
-              "text": "Mooring Fitting Studio 에서 사용 설명서를 바로 엽니다. 설명서는 3D 화면 옆에 열려, 읽으면서 그대로 따라 할 수 있습니다. 위 1~5번 기능의 사용법도 설명서(문서 버전 05)에 들어 있습니다."
+              "text": "Mooring Fitting Studio 에서 사용 설명서를 바로 엽니다. 설명서는 3D 화면 옆에 열려, 읽으면서 그대로 따라 할 수 있습니다. 부식 마진, 부재 이름, 하중 범위, 부재 분할과 추가의 사용법도 설명서(문서 버전 05)에 들어 있습니다."
             },
             {
               "label": "어디서 여나",
@@ -670,11 +949,13 @@
               "text": "처음에는 지금 탭의 설명이 열립니다(그림 ②). '탭 따라가기' 를 켜 두면 탭을 바꿀 때 설명도 넘어갑니다. [목차] 로 전체를 보고, 패널 왼쪽 가장자리를 끌어 폭을 바꿉니다."
             }
           ],
-          "image": {
-            "src": "img/mf-manual-dock.png",
-            "alt": "Studio 탭 줄 뒤의 설명서 버튼(1)과 3D 옆에 열린 Loads 탭 설명(2)",
-            "caption": "① [설명서] 를 누르면 ② 지금 탭(그림은 Loads)의 설명이 3D 옆에 열립니다."
-          }
+          "images": [
+            {
+              "src": "img/mf-manual-dock.png",
+              "alt": "Studio 탭 줄 뒤의 설명서 버튼(1)과 3D 옆에 열린 Loads 탭 설명(2)",
+              "caption": "① [설명서] 를 누르면 ② 지금 탭(그림은 Loads)의 설명이 3D 옆에 열립니다."
+            }
+          ]
         }
       ]
     }
