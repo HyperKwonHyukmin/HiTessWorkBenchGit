@@ -2,6 +2,18 @@
   "_comment": "관리자 '업데이트 이력'(Administration > Update History)의 내용. 2026년 10월부터 기록. 새 항목은 items 맨 앞에. 큰 범주로 쓴다: 항목 하나 = 주간 보고 한 줄 수준의 기능·문제 영역, 작은 수정·기본값·문구는 관련 항목의 points 에 합친다. 같은 기능이 나중에 보강되면 처음 항목의 points 에 (버전)과 함께 더한다. kind = 기능|개선|수정|정리|운영. version = 처음 실린 릴리스. requester = 그 기능을 요청한 사람 '이름 직급'(있을 때만, 예: 김도현 선임). 화면 문구에 em dash 를 쓰지 않는다. 고치면 백엔드 재시작 없이 다음 조회부터 반영된다(145 는 Server Manager Update 로 git pull). page = 사용자 안내 페이지(UpdateWeb/updates.json 의 안내 id, /updates/<id>)가 있으면 그 id — 화면에 '사용자 안내 페이지' 단추가 생긴다. Studio 항목은 studio = viewer id(studio_release.json 의 키), version = 그 Studio 버전으로 적고 /studio-release 로 145 에 공개할 때 쓴다(70 로컬 빌드마다 쓰지 않는다). 공개한 버전 사이에 바뀐 것을 한 항목으로 묶는다.",
   "items": [
     {
+      "date": "2026-11-27",
+      "version": "0.1.20",
+      "studio": "model-studio",
+      "kind": "개선",
+      "title": "Model Builder Studio 3D 마우스 조작 설정, 배관 유체 채우기 버튼을 Edit 탭 맨 위로",
+      "summary": "새 Settings 탭에서 회전, 화면 이동, 드래그 확대와 축소, 범위 선택을 마우스 버튼마다 고르고 휠 방향을 바꿀 수 있습니다. 고른 값은 PC 에 저장돼 다음에 열어도 유지됩니다. 배관 유체 채우기와 비우기 버튼을 Edit 탭 맨 위 상태 줄에도 두어 바로 찾을 수 있게 했습니다.",
+      "points": [
+        "마우스 조작 설정(0.1.19): 범위 선택은 Edit 탭에서만 됩니다. WorkBench 1.7.27 이상이면 설정 파일로도 저장됩니다.",
+        "배관 유체(0.1.20): Edit 탭 맨 위 '배관 유체: 비움 (기본값)' 줄의 [채우기], 채운 뒤에는 [비우기]. 아래 '모델 조작' 칸의 버튼도 그대로 있습니다."
+      ]
+    },
+    {
       "date": "2026-11-26",
       "version": "0.1.18",
       "studio": "model-studio",
